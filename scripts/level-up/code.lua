@@ -262,9 +262,6 @@ for _, data in humans do
 		addExp(data, expToAward, "won game")
 		amountWon += 1
 	end)
-	SS13.register_signal(data.human, "mob_say", function()
-		addExp(data, 1000, "cheat")
-	end)
 end
 
 function DESTRUCT_CLEANUP_HUMANS()
@@ -272,6 +269,5 @@ function DESTRUCT_CLEANUP_HUMANS()
 		data.human:set_var("maptext", "")
 		SS13.unregister_signal(data.human, "movable_moved")
 		SS13.unregister_signal(data.human, "mob_won_videogame")
-		SS13.unregister_signal(data.human, "mob_say")
 	end
 end

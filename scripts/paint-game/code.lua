@@ -8,16 +8,16 @@ local loc = {
 	z = dm.usr:get_var("z"),
 }
 
-function locate(x, y, z)
+local function locate(x, y, z)
 	z = z or loc.z
 	return dm.global_proc("_locate", x, y, z)
 end
 
-function block(turfA, turfB)
+local function block(turfA, turfB)
 	return dm.global_proc("_block", turfA, turfB)
 end
 
-function setTurf(turf, new_path)
+local function setTurf(turf, new_path)
 	local location = {
 		turf:get_var("x"),
 		turf:get_var("y"),
@@ -27,13 +27,13 @@ function setTurf(turf, new_path)
 	return locate(table.unpack(location))
 end
 
-function createSetTurfFunc(new_path)
+local function createSetTurfFunc(new_path)
 	return function(turf)
 		setTurf(turf, new_path)
 	end
 end
 
-function applyOutfit(target, dresscode)
+local function applyOutfit(target, dresscode)
 	target:set_var("l_store", nil)
 	target:set_var("r_store", nil)
 	target:set_var("s_store", nil)
@@ -58,7 +58,7 @@ purpleTurf = setTurf(purpleTurf, "/turf/open/floor/carpet/neon/simple/purple")
 
 SS13.wait(1)
 
-function REF(obj)
+local function REF(obj)
 	return dm.global_proc("REF", obj)
 end
 
@@ -71,14 +71,14 @@ end
 humans = humans or {}
 local takenTurfs = {}
 
-function updateScore(data)
+local function updateScore(data)
 	data.human:set_var(
 		"maptext",
 		string.format("<span class='maptext'>Score: %d<br />%s</span>", data.score, data.class)
 	)
 end
 
-function setupHuman(name, location, color)
+local function setupHuman(name, location, color)
 	if not humans[name] or REF(humans[name].human) == "[0x0]" or humans[name].human:get_var("gc_destroyed") ~= nil then
 		humans[name] = {
 			human = SS13.new("/mob/living/carbon/human", location),
@@ -137,30 +137,30 @@ local classes = {
 	},
 }
 
-function applyClass(className, data)
+local function applyClass(className, data)
 	local class = classes[className][math.random(1, #classes[className])]
 	data.class = class[1]
 	applyOutfit(data.human, class[2])
 end
 
-function handleRewards(data)
-	if data.highestScore >= 10 and not data.rewardsReceived["firstClass"] then
-		data.rewardsReceived["firstClass"] = true
+local function handleRewards(data)
+	if data.highestScore >= 10 and not data.rewardsReceived.firstClass then
+		data.rewardsReceived.firstClass = true
 		applyClass("firstClass", data)
-	elseif data.highestScore >= 20 and not data.rewardsReceived["secondClass"] then
-		data.rewardsReceived["secondClass"] = true
+	elseif data.highestScore >= 20 and not data.rewardsReceived.secondClass then
+		data.rewardsReceived.secondClass = true
 		applyClass("secondClass", data)
-	elseif data.highestScore >= 40 and not data.rewardsReceived["thirdClass"] then
-		data.rewardsReceived["thirdClass"] = true
+	elseif data.highestScore >= 40 and not data.rewardsReceived.thirdClass then
+		data.rewardsReceived.thirdClass = true
 		applyClass("thirdClass", data)
-	elseif data.highestScore >= 60 and not data.rewardsReceived["fourthClass"] then
-		data.rewardsReceived["fourthClass"] = true
+	elseif data.highestScore >= 60 and not data.rewardsReceived.fourthClass then
+		data.rewardsReceived.fourthClass = true
 		applyClass("fourthClass", data)
-	elseif data.highestScore >= 100 and not data.rewardsReceived["ertClass"] then
-		data.rewardsReceived["ertClass"] = true
+	elseif data.highestScore >= 100 and not data.rewardsReceived.ertClass then
+		data.rewardsReceived.ertClass = true
 		applyClass("ertClass", data)
-	elseif data.highestScore >= 150 and not data.rewardsReceived["finalClass"] then
-		data.rewardsReceived["finalClass"] = true
+	elseif data.highestScore >= 150 and not data.rewardsReceived.finalClass then
+		data.rewardsReceived.finalClass = true
 		applyClass("finalClass", data)
 	end
 end

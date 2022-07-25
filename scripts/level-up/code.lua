@@ -210,7 +210,7 @@ end
 local function handleLevelUp(data)
 	if ITEM_TABLE[data.level] then
 		local items = ITEM_TABLE[data.level]
-		local item = SS13.new(items[math.random(1, #items)], dm.global_proc("_get_step", data.human, 0))
+		local item = SS13.new(items[math.random(#items)], dm.global_proc("_get_step", data.human, 0))
 		if not data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true) then
 			data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true)
 		end
@@ -227,7 +227,7 @@ local function notifyPlayer(ply, msg)
 end
 
 local function addExp(data, exp, cause)
-	data.exp = data.exp + exp
+	data.exp += exp
 
 	while data.exp >= data.level * 20 do
 		data.exp = data.exp - data.level * 20
@@ -245,7 +245,7 @@ end
 
 for _, data in humans do
 	local excercise = 0
-	SS13.register_signal(data.human, "movable_moved", function(source)
+	SS13.register_signal(data.human, "movable_moved", function()
 		if excercise >= 50 then
 			excercise = 0
 			addExp(data, 1, "exercise")

@@ -1,6 +1,8 @@
 ---
 base: lua51
 globals:
+  dm.usr:
+    struct: Datum
   dm.global_vars:
     struct: Datum
   dm.global_proc:
@@ -8,9 +10,30 @@ globals:
       - type: string
       - type: ...
         required: false
+  table.unpack:
+    args:
+      - type: table
+      - required: false
+        type: number
+      - required: false
+        type: number
+    must_use: true
+  sleep:
+    args: []
 structs:
   Datum:
     get_var:
       method: true
       args:
         - type: string
+    set_var:
+      method: true
+      args:
+        - type: string
+        - type: any
+    call_proc:
+      method: true
+      args:
+        - type: string
+        - type: ...
+          required: false

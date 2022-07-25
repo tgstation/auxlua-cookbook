@@ -1,0 +1,8 @@
+std = "ss13"
+
+[config]
+# Remove this when SS13 is included by default, or can be local
+# Also remove when there are destructor functions
+unscoped_variables = { ignore_pattern = "^SS13|^DESTRUCT_" }
+
+unused_variable = { ignore_pattern = "^DESTRUCT_|^_" }

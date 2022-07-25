@@ -1,0 +1,16 @@
+---
+base: lua51
+globals:
+  dm.global_vars:
+    struct: Datum
+  dm.global_proc:
+    args:
+      - type: string
+      - type: ...
+        required: false
+structs:
+  Datum:
+    get_var:
+      method: true
+      args:
+        - type: string

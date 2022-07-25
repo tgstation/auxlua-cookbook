@@ -32,7 +32,6 @@ local function dropEverything(target)
 			target:call_proc("regenerate_icons")
 		end
 	end
-
 end
 
 local function applyOutfit(target, dresscode)
@@ -59,7 +58,7 @@ local FUNCTION_TABLE = {
 		local choice = SS13.await(SS13.global_proc, "tgui_input_list", data.human, "Choose a class", "Class Picker", {
 			"Intern",
 			"Syndicate Recruit",
-			"No class"
+			"No class",
 		})
 		if data.class == "Classless" then
 			return
@@ -117,10 +116,11 @@ local FUNCTION_TABLE = {
 		end
 
 		if data.class == "Classless" then
-			local choice = SS13.await(SS13.global_proc, "tgui_input_list", data.human, "Choose a class", "Class Picker", {
-				"Death Commando",
-				"No class"
-			})
+			local choice =
+				SS13.await(SS13.global_proc, "tgui_input_list", data.human, "Choose a class", "Class Picker", {
+					"Death Commando",
+					"No class",
+				})
 			if deathOperative or not choice or choice == "No class" then
 				return
 			end
@@ -128,9 +128,8 @@ local FUNCTION_TABLE = {
 			applyOutfit(data.human, "/datum/outfit/centcom/death_commando")
 		end
 		updateVisualData(data)
-	end
+	end,
 }
-
 
 local function hsvToRgb(h, s, v, a)
 	local r, g, b
@@ -195,12 +194,13 @@ end
 local humans = {}
 
 local function setupHuman(name, human, color)
-	humans[name] = {}
-	humans[name].human = human
-	humans[name].exp = 0
-	humans[name].level = 0
-	humans[name].class = human:get_var("job") or "Prisoner"
-	humans[name].color = color
+	humans[name] = {
+		human = human,
+		exp = 0,
+		level = 0,
+		class = human:get_var("job") or "Prisoner",
+		color = color,
+	}
 
 	human:set_var("maptext_width", 128)
 	human:set_var("maptext_y", 30)

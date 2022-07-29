@@ -15,121 +15,60 @@ local ITEM_TABLE = {
 		"/obj/item/storage/belt/military/assault",
 		"/obj/item/storage/medkit/regular",
 	},
-	[20] = {
+	[30] = {
 		"/obj/item/shadowcloak",
 		"/obj/item/spear/grey_tide",
 		"/obj/item/clothing/shoes/jackboots/fast",
 		"/obj/item/dice/d20/fate/stealth/one_use",
 		"/obj/item/clothing/suit/armor/reactive/table",
-		"/obj/item/clothing/head/helmet/abductor",
 	},
 }
 
-local function dropEverything(target)
-	for _, item in target:call_proc("get_all_worn_items"):to_table() do
-		if not target:call_proc("dropItemToGround", item) then
-			dm.global_proc("qdel", item)
-			target:call_proc("regenerate_icons")
-		end
-	end
+local admin = dm.usr:get_var("ckey")
+
+local function notifyPlayer(ply, msg)
+	ply:call_proc("balloon_alert", ply, msg)
 end
 
-local function applyOutfit(target, dresscode)
-	dropEverything(target)
-	target:call_proc("equipOutfit", dm.global_proc("_text2path", dresscode))
+local function getXpReq(data)
+	return data.level * 10
 end
 
 local function updateVisualData(data)
-	data.human:set_var(
+	local statAmounts = 5
+	local statString = ""
+	for _ = 1, statAmounts do
+		statString = statString .. "<br/>%s"
+	end
+	data.image:set_var(
 		"maptext",
 		string.format(
-			"<span class='maptext' style='color: %s'>Level: %d<br />%s</span>",
+			"<span class='maptext' style='color: %s'>Level: %d<br />Experience %d/%d<br />%s<br/>"..statString.."%s</span>",
 			data.color,
 			data.level,
-			data.class
+			data.exp,
+			getXpReq(data),
+			data.class,
+			"Vitality: "..data.stats.Vitality,
+			"Defense: "..data.stats.Defense,
+			"Strength: "..data.stats.Strength,
+			"Dexterity: "..data.stats.Dexterity,
+			"Speed: "..data.stats.Speed,
+			data.unallocatedPoints ~= 0 and "<br />Unallocated Stat Points: "..data.unallocatedPoints or ""
 		)
 	)
+	if data.unallocatedPoints ~= 0 then
+		data.button:set_var("maptext", "<span class='maptext'>Spend Stat Points</span>")
+	else
+		data.button:set_var("maptext", "")
+	end
 end
 
-local deathOperative = false
+local soundEffectToSteal = SS13.new("/obj/effect/fun_balloon/sentience", dm.usr:get_var("loc"))
+local levelUpSound = soundEffectToSteal:get_var("pop_sound_effect")
+dm.global_proc("qdel", soundEffectToSteal)
 
-local FUNCTION_TABLE = {
-	[30] = function(data)
-		local choice = SS13.await(SS13.global_proc, "tgui_input_list", data.human, "Choose a class", "Class Picker", {
-			"Intern",
-			"Syndicate Recruit",
-			"No class",
-		})
-		if data.class == "Classless" then
-			return
-		end
-		if choice == "Intern" then
-			data.class = "Intern"
-			applyOutfit(data.human, "/datum/outfit/centcom/centcom_intern/unarmed")
-		elseif choice == "Syndicate Recruit" then
-			data.class = "Syndicate Recruit"
-			applyOutfit(data.human, "/datum/outfit/pirate")
-		else
-			data.class = "Classless"
-		end
-		updateVisualData(data)
-	end,
-	[31] = function(data)
-		if data.class ~= "Intern" and data.class ~= "Syndicate Recruit" and data.class ~= "Classless" then
-			data.class = "Classless"
-		end
-		updateVisualData(data)
-	end,
-	[40] = function(data)
-		if data.class == "Intern" then
-			data.class = "Head Intern"
-			applyOutfit(data.human, "/datum/outfit/centcom/centcom_intern/leader")
-		elseif data.class == "Syndicate Recruit" then
-			data.class = "Syndicate Operative"
-			applyOutfit(data.human, "/datum/outfit/mobster")
-		end
-		updateVisualData(data)
-	end,
-	[50] = function(data)
-		if data.class == "Head Intern" then
-			data.class = "Centcom Officer"
-			applyOutfit(data.human, "/datum/outfit/centcom/ert/security")
-		elseif data.class == "Syndicate Operative" then
-			data.class = "Syndicate Assassin"
-			applyOutfit(data.human, "/datum/outfit/assassin")
-		end
-		updateVisualData(data)
-	end,
-	[60] = function(data)
-		if data.class == "Centcom Officer" then
-			data.class = "Centcom Commander"
-			applyOutfit(data.human, "/datum/outfit/centcom/commander/mod")
-		elseif data.class == "Syndicate Assassin" then
-			data.class = "Syndicate Admiral"
-			applyOutfit(data.human, "/datum/outfit/centcom/soviet")
-		end
-		updateVisualData(data)
-	end,
-	[65] = function(data)
-		if deathOperative then
-			return
-		end
-
-		if data.class == "Classless" then
-			local choice =
-				SS13.await(SS13.global_proc, "tgui_input_list", data.human, "Choose a class", "Class Picker", {
-					"Death Commando",
-					"No class",
-				})
-			if deathOperative or not choice or choice == "No class" then
-				return
-			end
-			data.class = "Death Commando"
-			applyOutfit(data.human, "/datum/outfit/centcom/death_commando")
-		end
-		updateVisualData(data)
-	end,
-}
+local FUNCTION_TABLE = {}
 
 local function hsvToRgb(h, s, v, a)
 	local r, g, b
@@ -191,20 +130,117 @@ if DESTRUCT_CLEANUP_HUMANS then
 	DESTRUCT_CLEANUP_HUMANS()
 end
 
+local physTypes = {
+	brute_mod = "Defense",
+	burn_mod = "Defense",
+	tox_mod = "Defense",
+	oxy_mod = "Defense",
+	clone_mod = "Defense",
+	cold_mod = "Defense",
+	heat_mod = "Defense",
+	pressure_mod = "Defense",
+	siemens_coeff = "Defense",
+	stamina_mod = "Strength",
+	stun_mod = "Strength",
+	bleed_mod = "Vitality"
+}
+
+local function recalculateStats(data)
+	local human = data.human
+
+	human:call_proc("add_or_update_variable_movespeed_modifier", dm.global_proc("_text2path", "/datum/movespeed_modifier/admin_varedit"), true, -data.stats.Speed * 0.02)
+	human:set_var("maxHealth", 100 + data.stats.Vitality * 3)
+	human:set_var("next_move_modifier", 1 - data.stats.Dexterity * 0.01)
+	human:call_proc("add_or_update_variable_actionspeed_modifier", dm.global_proc("_text2path", "/datum/actionspeed_modifier/base"), true, 1 - data.stats.Dexterity * 0.02)
+	local phys = data.human:get_var("physiology")
+	for physType, var in physTypes do
+		phys:set_var(physType, phys:get_var(physType) * (1 - data.stats[var]*0.01))
+	end
+	local species = data.human:get_var("dna"):get_var("species")
+	species:set_var("punchdamagehigh", 10 + math.floor(data.stats.Strength*0.4))
+	species:set_var("punchdamagelow", 1 + math.floor(data.stats.Strength*0.4))
+end
+
+local function undoStats(data)
+	local human = data.human
+	human:call_proc("remove_movespeed_modifier", dm.global_proc("_text2path", "/datum/movespeed_modifier/admin_varedit"))
+	human:call_proc("add_or_update_variable_actionspeed_modifier", dm.global_proc("_text2path", "/datum/actionspeed_modifier/base"), true, 1)
+	human:set_var("maxHealth", 100)
+	human:set_var("next_move_modifier", 1)
+	local phys = data.human:get_var("physiology")
+	for physType, _ in physTypes do
+		phys:set_var(physType, 1)
+	end
+	local species = data.human:get_var("dna"):get_var("species")
+	species:set_var("punchdamagehigh", 10)
+	species:set_var("punchdamagelow", 1)
+end
+
 local humans = {}
 
 local function setupHuman(name, human, color)
 	humans[name] = {
 		human = human,
 		exp = 0,
-		level = 0,
-		class = human:get_var("job") or "Prisoner",
+		level = 1,
+		class = human:get_var("job") or "Unassigned",
 		color = color,
+		image = SS13.new("/atom/movable/screen/text", dm.usr),
+		button = SS13.new("/atom/movable/screen/text", dm.usr),
+		unallocatedPoints = 0,
+		stats = {
+			Strength = 0,
+			Vitality = 0,
+			Dexterity = 0,
+			Defense = 0,
+			Speed = 0,
+		}
 	}
+	local humanData = humans[name]
+	humanData.button:set_var("screen_loc", "WEST:4,CENTER-0:0")
+	humanData.button:set_var("maptext_width", 80)
+	humanData.button:set_var("maptext_height", 15)
+	humanData.image:set_var("screen_loc", "WEST:4,CENTER-0:17")
+	humanData.button:set_var("mouse_opacity", 2)
+	local hud = human:get_var("hud_used")
+	local hudElements = hud:get_var("static_inventory")
+	hudElements:add(humanData.image)
+	hudElements:add(humanData.button)
+	humanData.image:set_var("loc", nil)
+	humanData.button:set_var("loc", nil)
+	hud:call_proc("show_hud", hud:get_var("hud_version"))
+	updateVisualData(humanData)
 
-	human:set_var("maptext_width", 128)
-	human:set_var("maptext_y", 30)
-	updateVisualData(humans[name])
+	local isOpen = false
+	SS13.register_signal(humanData.button, "atom_click", function()
+		if isOpen or humanData.unallocatedPoints <= 0 then
+			return
+		end
+		SS13.set_timeout(0, function()
+			isOpen = true
+			local response = SS13.await(SS13.global_proc, "tgui_input_list", human, "Select Stat Point", "Stat Point Selection", humanData.stats)
+			isOpen = false
+			if humanData.unallocatedPoints <= 0 then
+				notifyPlayer(human, "insufficient stat points!")
+				return
+			end
+			if response == nil then
+				return
+			end
+			undoStats(humanData)
+			local currentValue = humanData.stats[response]
+			if currentValue >= 99 then
+				notifyPlayer(human, "max stat level reached!")
+			else
+				humanData.stats[response] += 1
+				humanData.unallocatedPoints -= 1
+			end
+			recalculateStats(humanData)
+			updateVisualData(humanData)
+		end)
+	end)
+
+	return humanData
 end
 
 local function handleLevelUp(data)
@@ -214,36 +250,48 @@ local function handleLevelUp(data)
 		if not data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true) then
 			data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true)
 		end
+	elseif data.level % 5 == 0 then
+		local item = SS13.new("/obj/item/a_gift/anything", dm.global_proc("_get_step", data.human, 0))
+		if not data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true) then
+			data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true)
+		end
 	end
 	if FUNCTION_TABLE[data.level] then
 		SS13.set_timeout(1, function()
 			FUNCTION_TABLE[data.level](data)
 		end)
 	end
-end
-
-local function notifyPlayer(ply, msg)
-	ply:call_proc("balloon_alert", ply, msg)
+	data.unallocatedPoints += math.max(1 * (3 - math.floor(data.level / 5)), 1)
 end
 
 local function addExp(data, exp, cause)
 	data.exp += exp
-
-	while data.exp >= data.level * 20 do
-		data.exp = data.exp - data.level * 20
+	
+	local originalLevel = data.level
+	while data.exp >= getXpReq(data) do
+		data.exp = data.exp - getXpReq(data)
 		data.level = data.level + 1
 		handleLevelUp(data)
 	end
 	notifyPlayer(data.human, string.format("%s (%d xp)", cause, exp))
+	if originalLevel ~= data.level then
+		local turf = dm.global_proc("_get_step", data.human, 0)
+		dm.global_proc("playsound", turf, levelUpSound, 15)
+		SS13.new("/obj/effect/temp_visual/gravpush", turf)
+	end
 	updateVisualData(data)
 end
 
 for _, ply in dm.global_vars:get_var("GLOB"):get_var("player_list"):to_table() do
-	setupHuman(REF(ply), ply, rgbToHex(hsvToRgb(math.random(), 1, 1, 1)))
+	if not SS13.istype(ply, "/mob/living/carbon/human") then
+		continue
+	end
+	setupHuman(REF(ply), ply, rgbToHex(hsvToRgb(math.random(), 0.5, 1, 1)))
 	sleep()
 end
 
-for _, data in humans do
+local deadMobs = {}
+local function applySignals(data)
 	local excercise = 0
 	SS13.register_signal(data.human, "movable_moved", function()
 		if excercise >= 50 then
@@ -262,12 +310,137 @@ for _, data in humans do
 		addExp(data, expToAward, "won game")
 		amountWon += 1
 	end)
+	local slappedPeople = {}
+	SS13.register_signal(data.human, "living_slap_mob", function(_, slapped)
+		local slappedRef = REF(slapped)
+		if slappedPeople[slappedRef] then
+			return
+		end
+		addExp(data, 5, "slapped person")
+		slappedPeople[slappedRef] = true	
+	end)
+	local pointedObjects = {}
+	SS13.register_signal(data.human, "mob_pointed", function(_, pointed_object)
+		if not SS13.istype(pointed_object, "/mob/living/carbon/human") then
+			return
+		end
+		local pointedRef = REF(pointed_object)
+		if pointed_object:get_var("client") == nil or pointedObjects[pointedRef] then
+			return
+		end
+		addExp(data, 5, "pointed at person")
+		pointedObjects[pointedRef] = true
+	end)
+	SS13.register_signal(data.human, "atom_examine", function(_, examining_mob, examine_list)
+	
+		examine_list:add("<span class='notice'>They are level "..data.level.."</span>")
+		if examining_mob:get_var("ckey") == admin then
+			examine_list:add("<span class='boldwarning'><hr/>ADMIN INFO</span>")
+			examine_list:add("<span class='notice'>Experience: "..data.exp.."/"..getXpReq(data).."</span>")
+			examine_list:add(string.format("<span class='notice'>%s|%s|%s|%s|%s</span>",
+				"Vitality: "..data.stats.Vitality,
+				"Defense: "..data.stats.Defense,
+				"Strength: "..data.stats.Strength,
+				"Dexterity: "..data.stats.Dexterity,
+				"Speed: "..data.stats.Speed
+			))
+			examine_list:add("<hr/>")
+		end
+	end)
+	SS13.register_signal(data.human, "human_melee_unarmed_attack", function(human, target, proximity)
+		if not SS13.istype(target, "/mob") then
+			return
+		end
+
+		if target:get_var("stat") ~= 4 or not human:get_var("combat_mode") or proximity == 0 then
+			return
+		end
+		local targetRef = REF(target)
+		
+		local possibleData = humans[targetRef]
+
+		if possibleData == nil then
+			if deadMobs[targetRef] then
+				return
+			end
+			if SS13.istype(target, "/mob/living/simple_animal/hostile") then
+				if SS13.istype(target, "/mob/living/simple_animal/hostile/bubblegum") then
+					addExp(data, 500, "killed bubblegum")
+				elseif SS13.istype(target, "/mob/living/simple_animal/hostile/colossus") then
+					addExp(data, 350, "killed colossus")
+				elseif SS13.istype(target, "/mob/living/simple_animal/hostile/megafauna/dragon") then
+					addExp(data, 250, "killed dragon")
+				elseif SS13.istype(target, "/mob/living/simple_animal/hostile/megafauna/blood_drunk_miner") then
+					addExp(data, 250, "killed miner")
+				elseif SS13.istype(target, "/mob/living/simple_animal/hostile/megafauna") then
+					addExp(data, 150, "killed megafauna")
+				else
+					addExp(data, math.max(5, math.min(100, target:get_var("melee_damage_upper"))), "killed combatant")
+				end
+			else
+				addExp(data, 5, "killed non-combatant")
+			end
+			deadMobs[targetRef] = true
+		else
+			if possibleData.exp == 0 then
+				return
+			end
+			addExp(data, possibleData.exp, "stolen player xp")
+			possibleData.exp = 0
+		end
+	end)
+	local isOpen = false
+	SS13.register_signal(data.human, "ctrl_click", function(_, clicker)
+		if isOpen then
+			return
+		end
+		if clicker:get_var("ckey") == admin then
+			SS13.set_timeout(0, function()
+				isOpen = true
+				local input = SS13.await(SS13.global_proc, "tgui_input_number", clicker, "Add Experience", 0, 0, 1000000000)
+				isOpen = false
+				if input == nil or input == 0 then
+					return
+				end
+				local reason = SS13.await(SS13.global_proc, "tgui_input_text", clicker, "Reason for adding experience", "Add Experience", "gifted by gods")
+				addExp(data, input, reason)
+			end)
+		end
+	end)
+end
+
+local SSdcs = dm.global_vars:get_var("SSdcs")
+SS13.register_signal(SSdcs, "!crewmember_joined", function(_, target)
+	local data = setupHuman(REF(target), target, rgbToHex(hsvToRgb(math.random(), 1, 1, 1)))
+	applySignals(data)
+end)
+
+for _, data in humans do
+	applySignals(data)
+	sleep()
 end
 
 function DESTRUCT_CLEANUP_HUMANS()
+	SS13.unregister_signal(SSdcs, "!crewmember_joined")
+	
 	for _, data in humans do
-		data.human:set_var("maptext", "")
+		undoStats(data)
+		local hud = data.human:get_var("hud_used")
+		local hudElements = hud:get_var("static_inventory")
+		dm.global_proc("_list_remove", hudElements, data.image)
+		dm.global_proc("_list_remove", hudElements, data.button)
+		dm.global_proc("qdel", data.image)
+		dm.global_proc("qdel", data.button)
+		if REF(data.human) == "[0x0]" or data.human:get_var("gc_destroyed") ~= nil then
+			continue
+		end
 		SS13.unregister_signal(data.human, "movable_moved")
 		SS13.unregister_signal(data.human, "mob_won_videogame")
+		SS13.unregister_signal(data.human, "mob_pointed")
+		SS13.unregister_signal(data.human, "living_slap_mob")
+		SS13.unregister_signal(data.human, "atom_examine")
+		SS13.unregister_signal(data.human, "human_melee_unarmed_attack")
+		SS13.unregister_signal(data.human, "ctrl_click")
+		sleep()
 	end
 end

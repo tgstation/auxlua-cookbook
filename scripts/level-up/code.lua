@@ -35,7 +35,7 @@ local function getXpReq(data)
 end
 
 local function updateVisualData(data)
-	local statAmounts = 5
+	local statAmounts = 4
 	local statString = ""
 	for _ = 1, statAmounts do
 		statString = statString .. "<br/>%s"
@@ -49,10 +49,9 @@ local function updateVisualData(data)
 			data.exp,
 			getXpReq(data),
 			data.class,
-			"Vitality: "..data.stats.Vitality,
+			"Physique: "..data.stats.Physique,
 			"Defense: "..data.stats.Defense,
 			"Strength: "..data.stats.Strength,
-			"Dexterity: "..data.stats.Dexterity,
 			"Speed: "..data.stats.Speed,
 			data.unallocatedPoints ~= 0 and "<br />Unallocated Stat Points: "..data.unallocatedPoints or ""
 		)
@@ -142,16 +141,16 @@ local physTypes = {
 	siemens_coeff = "Defense",
 	stamina_mod = "Strength",
 	stun_mod = "Strength",
-	bleed_mod = "Vitality"
+	bleed_mod = "Physique"
 }
 
 local function recalculateStats(data)
 	local human = data.human
 
 	human:call_proc("add_or_update_variable_movespeed_modifier", dm.global_proc("_text2path", "/datum/movespeed_modifier/admin_varedit"), true, -data.stats.Speed * 0.02)
-	human:set_var("maxHealth", 100 + data.stats.Vitality * 3)
-	human:set_var("next_move_modifier", 1 - data.stats.Dexterity * 0.01)
-	human:call_proc("add_or_update_variable_actionspeed_modifier", dm.global_proc("_text2path", "/datum/actionspeed_modifier/base"), true, 1 - data.stats.Dexterity * 0.02)
+	human:set_var("maxHealth", 100 + data.stats.Physique * 3)
+	human:set_var("next_move_modifier", 1 - data.stats.Physique * 0.01)
+	human:call_proc("add_or_update_variable_actionspeed_modifier", dm.global_proc("_text2path", "/datum/actionspeed_modifier/base"), true, 1 - data.stats.Physique * 0.02)
 	local phys = data.human:get_var("physiology")
 	for physType, var in physTypes do
 		phys:set_var(physType, phys:get_var(physType) * (1 - data.stats[var]*0.01))
@@ -190,8 +189,7 @@ local function setupHuman(name, human, color)
 		unallocatedPoints = 0,
 		stats = {
 			Strength = 0,
-			Vitality = 0,
-			Dexterity = 0,
+			Physique = 0,
 			Defense = 0,
 			Speed = 0,
 		}
@@ -224,16 +222,20 @@ local function setupHuman(name, human, color)
 				notifyPlayer(human, "insufficient stat points!")
 				return
 			end
-			if response == nil then
+			local toInvestRaw = SS13.await(SS13.global_proc, "tgui_input_number", human, "Amount to spend", "Spend Stat Point", 1, 99)
+			if response == nil or toInvestRaw == nil then
 				return
 			end
+			local amountToInvest = math.min(humanData.unallocatedPoints, toInvestRaw)
 			undoStats(humanData)
 			local currentValue = humanData.stats[response]
 			if currentValue >= 99 then
 				notifyPlayer(human, "max stat level reached!")
 			else
-				humanData.stats[response] += 1
-				humanData.unallocatedPoints -= 1
+				local amountToTake = math.max(math.min(99 - currentValue, amountToInvest), 0)
+
+				humanData.stats[response] += amountToTake
+				humanData.unallocatedPoints -= amountToTake
 			end
 			recalculateStats(humanData)
 			updateVisualData(humanData)
@@ -268,18 +270,31 @@ local function addExp(data, exp, cause)
 	data.exp += exp
 	
 	local originalLevel = data.level
+	local iterations = 0
 	while data.exp >= getXpReq(data) do
+		if iterations >= 100 then
+			break
+		end
 		data.exp = data.exp - getXpReq(data)
 		data.level = data.level + 1
 		handleLevelUp(data)
+		iterations += 1
 	end
-	notifyPlayer(data.human, string.format("%s (%d xp)", cause, exp))
+	if cause ~= nil then
+		notifyPlayer(data.human, string.format("%s (%d xp)", cause, exp))
+	end
 	if originalLevel ~= data.level then
 		local turf = dm.global_proc("_get_step", data.human, 0)
 		dm.global_proc("playsound", turf, levelUpSound, 15)
 		SS13.new("/obj/effect/temp_visual/gravpush", turf)
 	end
 	updateVisualData(data)
+
+	if data.exp >= getXpReq(data) then
+		SS13.set_timeout(1, function()
+			addExp(data, 0, nil)
+		end)
+	end
 end
 
 for _, ply in dm.global_vars:get_var("GLOB"):get_var("player_list"):to_table() do
@@ -337,11 +352,10 @@ local function applySignals(data)
 		if examining_mob:get_var("ckey") == admin then
 			examine_list:add("<span class='boldwarning'><hr/>ADMIN INFO</span>")
 			examine_list:add("<span class='notice'>Experience: "..data.exp.."/"..getXpReq(data).."</span>")
-			examine_list:add(string.format("<span class='notice'>%s|%s|%s|%s|%s</span>",
-				"Vitality: "..data.stats.Vitality,
+			examine_list:add(string.format("<span class='notice'>%s|%s|%s|%s</span>",
+				"Physique: "..data.stats.Physique,
 				"Defense: "..data.stats.Defense,
 				"Strength: "..data.stats.Strength,
-				"Dexterity: "..data.stats.Dexterity,
 				"Speed: "..data.stats.Speed
 			))
 			examine_list:add("<hr/>")
@@ -397,7 +411,7 @@ local function applySignals(data)
 		if clicker:get_var("ckey") == admin then
 			SS13.set_timeout(0, function()
 				isOpen = true
-				local input = SS13.await(SS13.global_proc, "tgui_input_number", clicker, "Add Experience", 0, 0, 1000000000)
+				local input = SS13.await(SS13.global_proc, "tgui_input_number", clicker, "Add Experience", "Add Experience", 0, 1000000000)
 				isOpen = false
 				if input == nil or input == 0 then
 					return

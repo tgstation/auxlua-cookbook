@@ -55,12 +55,15 @@ local function equipMob(mob)
 		end
 
 		mob:call_proc("put_in_hands", item)
+		
+		sleep()
 	end
 end
 
 for _, mob in GLOB:get_var("player_list"):to_table() do
 	if mob:get_var("mind") ~= nil then
 		equipMob(mob)
+		sleep()
 	end
 end
 

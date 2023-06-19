@@ -2,6 +2,7 @@
 -- For example, if you want a player with their changeling preferences on, change this to "Changeling"
 local BE_SPECIAL = "Traitor"
 
+-- selene: allow(unscoped_variables)
 function selectRandomPlayer(beSpecial)
     local players = dm.global_vars:get_var("GLOB"):get_var("alive_player_list")
     local playerTable = {}

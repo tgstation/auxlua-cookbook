@@ -1,3 +1,5 @@
+-- Change this to change what antagonist preference to check for when filtering through players to randomly select.
+-- For example, if you want a player with their changeling preferences on, change this to "Changeling"
 local BE_SPECIAL = "Traitor"
 
 function selectRandomPlayer(beSpecial)

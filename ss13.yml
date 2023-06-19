@@ -1,6 +1,8 @@
 ---
-base: lua51
+base: luau
 globals:
+  dm.world:
+    struct: Datum
   dm.usr:
     struct: Datum
   dm.global_vars:

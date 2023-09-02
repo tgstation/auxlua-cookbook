@@ -22,6 +22,8 @@ globals:
     must_use: true
   sleep:
     args: []
+  over_exec_usage:
+    - type: number
 structs:
   Datum:
     get_var:

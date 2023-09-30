@@ -4,16 +4,19 @@ local GLOB = dm.global_vars:get_var("GLOB")
 local SSdcs = dm.global_vars:get_var("SSdcs")
 local SSid_access = dm.global_vars:get_var("SSid_access")
 local SSmapping = dm.global_vars:get_var("SSmapping")
-local rules = "You are a wizard! You can do whatever you want on the station!\nNote: Antimagic is completely disabled\nRespawns are enabled\nPick up IDs to gain score!\nYou have invulnerability and invisibility until you move or click anywhere that isn't your inventory."
-
-if DESTRUCT_MAKE_WIZARD ~= nil then
-	DESTRUCT_MAKE_WIZARD()
-end
+local rules = "You are a wizard! You can do whatever you want on the station!\nNote: Antimagic is completely disabled\nRespawns are enabled\nPick up IDs to gain score!"
 
 local allHuds = {}
 local leaderboard = {}
 local players = {}
 local idCards = {}
+
+local BANNED_SPELLS = {
+    "/datum/spellbook_entry/summon",
+    "/datum/spellbook_entry/lichdom",
+    "/datum/spellbook_entry/summon_simians",
+    "/datum/spellbook_entry/bees"
+}
 
 local function REF(atom)
     return dm.global_proc("REF", atom)
@@ -37,11 +40,15 @@ local function updateLeaderboard(image)
             text
         )
     else
-        for _, currentImage in allHuds do
-            currentImage:set_var(
-                "maptext",
-                text
-            )
+        for currentImage, _ in allHuds do
+            if SS13.is_valid(currentImage) then
+                currentImage:set_var(
+                    "maptext",
+                    text
+                )
+            else
+                allHuds[currentImage] = nil
+            end
         end
     end
 end
@@ -66,7 +73,7 @@ local function makeWizard(oldmob, job)
             local id
             if outfit ~= nil then
                 outfit = dm.global_proc("_new", outfit)
-                id = SS13.new(outfit.vars.id, mob)
+                id = SS13.new(outfit.vars.id)
                 id:set_var("registered_name", ckey)
                 SSid_access:call_proc("apply_trim_to_card", id, outfit.vars.id_trim)
                 local ref = REF(id)
@@ -75,13 +82,19 @@ local function makeWizard(oldmob, job)
                     idCards[ref] = nil
                 end)
             end
-            local image = SS13.new("/atom/movable/screen/text", mob)
+            local image = SS13.new("/atom/movable/screen/text")
+            local readyUpButton = SS13.new("/atom/movable/screen/text")
             image:set_var("screen_loc", "WEST:4,CENTER-0:17")
+            readyUpButton:set_var("screen_loc", "WEST:4,CENTER-0:0")
+            readyUpButton:set_var("maptext", "<span class='maptext' style='color: #ffa8a8'>Join the battle</span>")
+            readyUpButton:set_var("maptext_width", 120)
+            readyUpButton:set_var("maptext_height", 15)
+            readyUpButton:set_var("mouse_opacity", 2)
             local hud = mob:get_var("hud_used")
             local hudElements = hud:get_var("static_inventory")
             hudElements:add(image)
-            image:set_var("loc", nil)
-            table.insert(allHuds, image)
+            hudElements:add(readyUpButton)
+            allHuds[image] = true
             hud:call_proc("show_hud", hud:get_var("hud_version"))
             if not players[ckey] then
                 players[ckey] = {
@@ -95,54 +108,45 @@ local function makeWizard(oldmob, job)
             local playerData = players[ckey]
             dm.global_proc("to_chat", mob, "<span class='big bold hypnophrase'>" .. rules .. "</span>")
             dm.global_proc("_add_trait", mob, "pacifism", "admin_voodoo")
-            dm.global_proc("_add_trait", mob, "magically_phased", "admin_voodoo")
-            mob:set_var("density", false)
-            mob:set_var("invisibility", 60)
-            mob:set_var("status_flags", 16)
-            mob:set_var("alpha", 127)
-            mob:call_proc("set_sight", 1084)
-            local pacifismRemoved = false
-            function register_mob_signals(old, mob_target)
-                function removePacifism()
-                    if not pacifismRemoved then
-                        if not mob:is_null() then
-                            dm.global_proc("_remove_trait", mob, "pacifism", "admin_voodoo")
-                            dm.global_proc("_remove_trait", mob, "magically_phased", "admin_voodoo")
-                            mob:set_var("density", true)
-                            mob:set_var("invisibility", 0)
-                            mob:set_var("status_flags", 15)
-                            mob:set_var("alpha", 255)
-                            mob:call_proc("set_sight", 0)
-                            pacifismRemoved = true
-                        end
-                    end
+            SS13.register_signal(readyUpButton, "atom_click", function(_, _, _ , _, clickingUser)
+                if clickingUser ~= mind:get_var("current") then
+                    return
                 end
+                mob:call_proc("forceMove", dm.global_proc("get_safe_random_station_turf"))
+                hudElements:remove(readyUpButton)
+                SS13.qdel(readyUpButton)
+                hud:call_proc("show_hud", hud:get_var("hud_version"))
+            end)
+            function register_mob_signals(old, mob_target)
                 if old ~= nil and not old:is_null() then
                     SS13.unregister_signal(old, "addtrait anti_magic")
                     SS13.unregister_signal(old, "mob_equipped_item")
                     SS13.unregister_signal(old, "addtrait anti_magic_no_selfblock")
                     SS13.unregister_signal(old, "mob_statchange")
                     SS13.unregister_signal(old, "mob_logout")
+                    SS13.unregister_signal(old, "try_invoke_spell")
+                    SS13.unregister_signal(old, "movable_moved")
                 end
+                SS13.register_signal(mob_target, "try_invoke_spell", function()
+                    local playerLoc = dm.global_proc("_get_step", mob_target, 0)
+                    local playerArea = playerLoc:get_var("loc")
+                    if bit32.band(playerArea:get_var("area_flags"), 320) == 320 then
+                        return 1
+                    end
+                end)
                 SS13.register_signal(mob_target, "addtrait anti_magic", function(_, trait)
-                    local traits = mob_target:get_var("status_traits")
+                    local traits = mob_target:get_var("_status_traits")
                     traits:remove(trait)
                 end)
                 SS13.register_signal(mob_target, "addtrait anti_magic_no_selfblock", function(_, trait)
-                    local traits = mob_target:get_var("status_traits")
+                    local traits = mob_target:get_var("_status_traits")
                     traits:remove(trait)
                 end)
                 SS13.register_signal(mob_target, "mob_equipped_item", function(_, item)
                     dm.global_proc("qdel", item:call_proc("GetComponent", dm.global_proc("_text2path", "/datum/component/anti_magic")))
                 end)
-                SS13.register_signal(mob_target, "mob_update_sight", function()
-                    if not pacifismRemoved then
-                        mob_target:call_proc("set_sight", 1084)
-                    end
-                end)
-                mob_target:call_proc("update_sight")
                 SS13.register_signal(mob_target, "mob_clickon", function(_, item, modifiers)
-                    if mob_target:call_proc("incapacitated") == true then
+                    if mob_target:call_proc("incapacitated") == 1 then
                         return
                     end
 
@@ -156,33 +160,29 @@ local function makeWizard(oldmob, job)
                     if playerMind and playerMind ~= mind and item:get_var("registered_name") ~= mob_target:get_var("ckey") then
                         playerData.idsPickedUp += 1
                         dm.global_proc("qdel", item)
-                        SS13.set_timeout(0.1, function()
-                            updateLeaderboard()
-                        end)
+                        updateLeaderboard()
                     end
                 end)
                 SS13.register_signal(mob_target, "movable_moved", function(_, _)
-                    removePacifism()
+                    local playerLoc = dm.global_proc("_get_step", mob_target, 0)
+                    local playerArea = playerLoc:get_var("loc")
+                    if bit32.band(playerArea:get_var("area_flags"), 320) ~= 320 then
+                        dm.global_proc("_remove_trait", mob_target, "pacifism", "admin_voodoo")
+                    end
                 end)
-                local dusted = false
                 SS13.register_signal(mob_target, "mob_statchange", function(_, new_stat)
-                    if new_stat == 4 then
-                        if SSmapping:call_proc("level_trait", mob_target:get_var("z"), "CentCom") then
-                            if not dusted and not mob_target:get_var("gc_destroyed") then
-                                dusted = true
-                                SS13.set_timeout(1, function()
-                                    mob_target:call_proc("dust")
-                                end)
-                            end
-                        elseif id ~= nil and not id:is_null() then
-                            id:call_proc("forceMove", id:call_proc("drop_location"))
+                    if new_stat == 4 and SS13.is_valid(id) then
+                        local playerLoc = dm.global_proc("_get_step", mob_target, 0)
+                        local playerArea = playerLoc:get_var("loc")
+                        if bit32.band(playerArea:get_var("area_flags"), 320) ~= 320 then
+                            id:call_proc("forceMove", playerLoc)
                         end
                     end
                 end)
                 SS13.register_signal(mob_target, "mob_logout", function(_)
-                    if SSmapping:call_proc("level_trait", mob_target:get_var("z"), "CentCom") and not dusted and not mob_target:get_var("gc_destroyed") then
-                        dusted = true
-                        SS13.set_timeout(1, function()
+                    if SSmapping:call_proc("level_trait", mob_target:get_var("z"), "Transit/Reserved") == 1 and SS13.is_valid(mob_target) then
+                        SS13.set_timeout(0, function()
+                            mob_target:set_var("ckey", nil)
                             mob_target:call_proc("dust")
                         end)
                     end
@@ -190,63 +190,87 @@ local function makeWizard(oldmob, job)
             end
             SS13.register_signal(mind, "mind_transferred", function(_, old)
                 local current = mind:get_var("current")
-                if old ~= nil and not old:is_null() then
-                    dm.global_proc("_remove_trait", old, "pacifism", "admin_voodoo")
-                end
                 register_mob_signals(old, current)
-                if id ~= nil and not id:is_null() then
-                    id:call_proc("forceMove", current)
-                end
             end)
             for _, telescroll in mob:get_var("contents"):of_type("/obj/item/teleportation_scroll") do
                 dm.global_proc("qdel", telescroll)
             end
             for _, spellbook in mob:get_var("back"):get_var("contents"):of_type("/obj/item/spellbook") do
-                for _, spell in spellbook:get_var("entries"):of_type("/datum/spellbook_entry/summon") do
-                    spell:set_var("limit", 0)
-                    spell:set_var("cost", 100)
+                for _, spell in spellbook:get_var("entries") do
+                    for _, banned in BANNED_SPELLS do
+                        if SS13.istype(spell, banned) then
+                            spell:set_var("limit", 0)
+                            spell:set_var("cost", 100)
+                        end
+                    end
                 end
             end
-            mob:call_proc("forceMove", dm.global_proc("get_safe_random_station_turf"))
             register_mob_signals(mob, mob)
             SS13.unregister_signal(mind, "antagonist_gained")
         end)
-        mind:call_proc("make_wizard")
+        SS13.await(mind, "make_wizard")
 	end
 end
 
 -- Initial wizard creation
 for _, mob in GLOB.vars.alive_player_list:to_table() do
-    makeWizard(mob)
-    sleep()
-end
-
-function give_leaderboard_to_dead_players()
-    for _, mob in GLOB.vars.dead_player_list:to_table() do
-        local image = SS13.new("/atom/movable/screen/text", mob)
-        image:set_var("screen_loc", "WEST:4,CENTER-0:17")
-        local hud = mob:get_var("hud_used")
-        local hudElements = hud:get_var("static_inventory")
-        hudElements:add(image)
-        table.insert(allHuds, image)
-        hud:call_proc("show_hud", hud:get_var("hud_version"))
-        updateLeaderboard(image)
+    if over_exec_usage(0.7) then
         sleep()
     end
+    makeWizard(mob)
 end
 
 local function latejoinSpawnCallback(_source, job, mob)
     makeWizard(mob, job)
 end
 
-SS13.register_signal(SSdcs, "!job_after_latejoin_spawn", latejoinSpawnCallback)
-
-DESTRUCT_MAKE_WIZARD = function()
-    SS13.unregister_signal(SSdcs, "!job_after_latejoin_spawn")
-    for _, image in allHuds do
-        if image ~= nil and not image:is_null() then
-            dm.global_proc("qdel", image)
+function setupDeadPlayer(newMob)
+    local image = SS13.new("/atom/movable/screen/text")
+    local respawnButton = SS13.new("/atom/movable/screen/text")
+    image:set_var("screen_loc", "WEST:4,CENTER-0:17")
+    local hud = newMob:get_var("hud_used")
+    local hudElements = hud:get_var("static_inventory")
+    respawnButton:set_var("screen_loc", "WEST:4,CENTER-0:0")
+    respawnButton:set_var("maptext", "<span class='maptext' style='color: #ffa8a8'>Respawn</span>")
+    respawnButton:set_var("maptext_width", 120)
+    respawnButton:set_var("maptext_height", 15)
+    respawnButton:set_var("mouse_opacity", 2)
+    hudElements:add(image)
+    hudElements:add(respawnButton)
+    allHuds[image] = true
+    hud:call_proc("show_hud", hud:get_var("hud_version"))
+    updateLeaderboard(image)
+    SS13.register_signal(respawnButton, "atom_click", function(_, _, _ , _, clickingUser)
+        if clickingUser ~= newMob then
+            return
         end
+        local newHuman
+        SS13.set_timeout(0, function()
+            newHuman = SS13.new("/mob/living/carbon/human", dm.global_proc("_pick_list", GLOB:get_var("wizardstart")))
+            newHuman:set_var("key", newMob:get_var("key"))
+        end)
+        SS13.set_timeout(0.1, function()
+            makeWizard(newHuman)
+        end)
+    end)
+end
+
+SS13.register_signal(SSdcs, "!job_after_latejoin_spawn", latejoinSpawnCallback)
+SS13.register_signal(SSdcs, "!atom_after_post_init", function(_, newMob)
+    if SS13.istype(newMob, "/mob/dead") then
+        SS13.set_timeout(1, function()
+            setupDeadPlayer(newMob)
+        end)
     end
-    DESTRUCT_MAKE_WIZARD = nil
+end)
+
+for _, player in GLOB:get_var("current_observers_list") do
+    if over_exec_usage(0.7) then
+        sleep()
+    end
+    setupDeadPlayer(player)
+end
+
+for _, machine in dm.global_vars:get_var("SSmachines"):get_var("machines_by_type"):get(SS13.type("/obj/machinery/porta_turret/ai")) do
+    SS13.qdel(machine)
 end

@@ -4,10 +4,17 @@ local me = dm.global_vars:get_var("GLOB"):get_var("directory"):get("waltermeldro
 
 local dropLocation = me:call_proc("drop_location")
 
-local lighter = SS13.new("/obj/item", dropLocation)
+local lighter = SS13.new("/obj/structure", dropLocation)
+local item = SS13.new_untracked("/obj/item", dropLocation)
 
-lighter:set_var("icon_state", "latexballon_blow")
-lighter:set_var("name", "Universe of People")
+lighter:set_var("icon", item:get_var("icon"))
+lighter:set_var("icon_state", "anom")
+lighter:set_var("name", "wormhole")
+lighter:set_var("anchored", true)
+lighter:set_var("density", true)
+lighter:set_var("uses_integrity", false)
+
+SS13.qdel(item)
 
 local processingPlayers = {}
 local playerCooldown = {}
@@ -16,31 +23,7 @@ function REF(ent)
     return dm.global_proc("REF", ent)
 end
 
-SS13.register_signal(lighter, "atom_attack_hand", function(self, player)
-    if REF(player:get_var("loc")) == REF(self) then
-        return 1
-    end
-end)
-
-SS13.register_signal(lighter, "atom_relaymove", function(self, player, direction)
-    if not SS13.istype(self:get_var("loc"), "/turf") then
-        return
-    end
-
-    local playerRef = REF(player)
-    local currentTime = dm.world:get_var("time")
-
-    if playerCooldown[playerRef] and playerCooldown[playerRef] > currentTime then
-        return 1
-    end
-
-    playerCooldown[playerRef] = currentTime + 50
-    self:call_proc("Move", dm.global_proc("_get_step", self:get_var("loc"), direction), direction)
-    dm.global_proc("to_chat", player, "<span class='notice'>You flop the hand "..dm.global_proc("dir2text", direction)..".</span>")
-    return 1
-end)
-
-SS13.register_signal(lighter, "item_attack_self", function(self, player)
+local function abductPlayer(self, player)
     local playerRef = dm.global_proc("REF", player)
 
     if processingPlayers[playerRef] then
@@ -69,7 +52,41 @@ SS13.register_signal(lighter, "item_attack_self", function(self, player)
         sparks:call_proc("attach", self:call_proc("drop_location"))
         sparks:call_proc("start")
     end)
-	return 1
+end
+
+SS13.register_signal(lighter, "atom_bumped", function(self, player)
+    if(SS13.istype(player, "/mob/living")) then
+        abductPlayer(self, player)
+    end
+end)
+
+SS13.register_signal(lighter, "atom_relaymove", function(self, player, direction)
+    if not SS13.istype(self:get_var("loc"), "/turf") then
+        return
+    end
+
+    local playerRef = REF(player)
+    local currentTime = dm.world:get_var("time")
+
+    if playerCooldown[playerRef] and playerCooldown[playerRef] > currentTime then
+        return 1
+    end
+
+    playerCooldown[playerRef] = currentTime + 5
+    local newTurf = dm.global_proc("_get_step", self:get_var("loc"), direction)
+    self:call_proc("Move", newTurf, direction)
+    dm.global_proc("to_chat", player, "<span class='notice'>You move the wormhole "..dm.global_proc("dir2text", direction)..".</span>")
+    for _, targetObj in newTurf:get_var("contents") do
+        if SS13.istype(targetObj, "/mob/living") then
+            abductPlayer(self, targetObj)
+        end
+        if SS13.istype(targetObj, "/obj/machinery/door") then
+            SS13.set_timeout(0, function()
+                targetObj:call_proc("bumpopen", player)
+            end)
+        end
+    end
+    return 1
 end)
 
 SS13.register_signal(lighter, "parent_qdeleting", function(self)

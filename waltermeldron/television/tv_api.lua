@@ -1,5 +1,4 @@
 SS13 = require("SS13")
-
 -- Change this to your ckey so that this works. Don't run it with my ckey please :)
 local admin = "waltermeldron"
 -- Admins that can also take administrative action, though they can't freely upload videos that bypass the time limit.
@@ -7,20 +6,20 @@ local trustedAdmins = {
 	[admin] = true,
 }
 -- The auth token. You'll need to update this every time you run the script because the python script generates a new one each time it runs for security purposes.
-authToken = "FmVtBvhvwfQBIxDYqiEeM"
+authToken = "LortBLMWdvrFMfCbqnhxS"
 -- Whether users can submit requests or not.
-local acceptingRequests = true
+local acceptingRequests = false
 -- The size of the TV. Current available options are 1, 2, 4, 8, 16
-local scale = 8
+local scale = 1
 -- Channel to play on. Don't modify if you don't know what you're doing
 local channel = 1023
 -- Whether to auto accept requests or not
 local autoAccept = true
 -- Number of people required to vote skip
-local voteSkipRequired = 5
+local voteSkipRequired = 100
 -- Whether the TV range is infinite or not. Keep it off if you don't want people nowhere near the TV to lag when videos load.
 -- Useful if you plan on curating or limiting the videos that will be played so that no matter
-local infiniteRange = false
+local infiniteRange = true
 -- Set to a value if you'd like to force the FPS of the video. Useful if the video itself is not important
 local forcedFps = nil
 local voteSkipData = {
@@ -88,10 +87,10 @@ local scales = {
 		behind_pixel_x = 3,
 		behind_pixel_y = 5,
 		behindSignScale = 0.5,
-		volume = 100,
+		volume = 1,
 		sampling = "nearest",
 		fps = 30,
-		maxVidLength = 60,
+		maxVidLength = 240,
 	},
 	[2] = {
 		pixel_x = 0,
@@ -99,7 +98,7 @@ local scales = {
 		behind_pixel_x = 0,
 		behind_pixel_y = 4,
 		behindSignScale = 1,
-		volume = 100,
+		volume = 1,
 		sampling = "nearest",
 		fps = 30,
 		maxVidLength = 60,
@@ -110,7 +109,7 @@ local scales = {
 		behind_pixel_x = -5,
 		behind_pixel_y = 2,
 		behindSignScale = 2,
-		volume = 100,
+		volume = 1,
 		extraWaitTime = 3,
 		sampling = "bicubic",
 		realScaleX = 3,
@@ -126,7 +125,7 @@ local scales = {
 		behind_pixel_x = -15,
 		behind_pixel_y = -2,
 		behindSignScale = 4,
-		volume = 100,
+		volume = 1,
 		extraWaitTime = 5,
 		sampling = "bicubic",
 		realScaleX = 5,
@@ -134,7 +133,7 @@ local scales = {
 		realPosX = -2,
 		realPosY = -2,
 		fps = 20,
-		maxVidLength = 60,
+		maxVidLength = 30,
 	},
 	[16] = {
 		pixel_x = -112,
@@ -142,7 +141,7 @@ local scales = {
 		behind_pixel_x = -35,
 		behind_pixel_y = -10,
 		behindSignScale = 8,
-		volume = 100,
+		volume = 1,
 		extraWaitTime = 5,
 		sampling = "bicubic",
 		realScaleX = 11,
@@ -153,32 +152,26 @@ local scales = {
 		maxVidLength = 30,
 	},
 }
-
 local scaleConfig = scales[scale]
-
 sign:set_var("pixel_x", scaleConfig.pixel_x)
 sign:set_var("pixel_y", scaleConfig.pixel_y)
 behindSign:set_var("pixel_x", scaleConfig.behind_pixel_x)
 behindSign:set_var("pixel_y", scaleConfig.behind_pixel_y)
 behindSign:set_var("transform", dm.global_proc("_matrix", scaleConfig.behindSignScale, 0, 0, 0, scaleConfig.behindSignScale, 0))
 tv:set_var("transform", dm.global_proc("_matrix", scale, 0, 0, 0, scale, 0))
-
 tv:call_proc("set_light_power", 100)
 tv:call_proc("set_light_range", math.floor(scale / 2))
 tv:call_proc("set_light_on", true)
 tv:call_proc("update_light")
-
 if scaleConfig.realScaleX then
 	tv:set_var("bound_width", 32 * scaleConfig.realScaleX)
 	tv:set_var("bound_height", 32 * scaleConfig.realScaleY)
 	tv:set_var("bound_x", 32 * scaleConfig.realPosX)
 	tv:set_var("bound_y", 32 * scaleConfig.realPosY)
 end
-
 sign:set_var("appearance_flags", 520)
 behindSign:set_var("mouse_opacity", 0)
 behindSign:set_var("appearance_flags", 520)
-
 globalPlayerSettings = globalPlayerSettings or nil
 local function getPlayerSettings(ckey)
 	globalPlayerSettings = globalPlayerSettings or {}
@@ -221,7 +214,7 @@ local function startTvLoop(players)
 		local location = tv:get_var("loc")
 		for _, playerData in players do
 			local playerClient = playerData.client
-			local playerData = playerData.data
+			local playerConfig = playerData.data
 			if animationEnd <= dm.world:get_var("timeofday") then
 				break
 			end
@@ -237,9 +230,9 @@ local function startTvLoop(players)
 			end
 			local playerPos = player:call_proc("drop_location")
 			local dist = dm.global_proc("_get_dist", playerPos, location)
-			local volume = (100 / playerData.volume) * scaleConfig.volume
+			local volume = playerConfig.volume * scaleConfig.volume
 			local playLocation = location
-			if playerData.audioMode == AUDIO_MONO then
+			if playerConfig.audioMode == AUDIO_MONO then
 				playLocation = playerPos
 			end
 			if not SS13.istype(location, "/turf") or dist > 12 or location:get_var("z") ~= playerPos:get_var("z") then
@@ -338,9 +331,7 @@ playClip = function()
 			end
 			if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) and player:get_var("client"):get_var("prefs"):call_proc("read_preference", adminMidiType) ~= 0 then
 				local playerSettings = getPlayerSettings(player:get_var("ckey"))
-				if playerSettings.disableTv then
-					continue
-				end
+				if playerSettings.disableTv then continue end
 				player:call_proc("playsound_local", nil, playingChannel.sound_file, 0, false, nil, 6, channel, true, playingChannel.sound_file, 17, 1, 1, true)
 				local client = player:get_var("client")
 				dm.global_proc("_list_add", client:get_var("images"), sign)
@@ -356,11 +347,7 @@ end
 local createHref = function(args, content, brackets)
 	brackets = brackets == nil and true or false
 	local data = "<a href='?src="..dm.global_proc("REF", tv)..";"..args.."'>"..content.."</a>"
-	if brackets then
-		return "("..data..")"
-	else
-		return data
-	end
+	if brackets then return "("..data..")" else return data end
 end
 
 queuedRequests = {}
@@ -666,15 +653,13 @@ local makeRequest = function(user, isAdmin)
 		if not isAdmin then
 			lastPlayerRequest[user] = dm.world:get_var("time")
 			if autoAccept then
-				dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", user).." queued the youtube video <span class='linkify'>"..scrubbed..
-				"</span> to be played on the TV. "..createHref("skip="..escape(scrubbed)..";", "SKIP").." "..createHref("block=1;ckey="..ckey, "BLOCK"))
+				dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", user).." queued the youtube video <span class='linkify'>"..scrubbed.."</span> to be played on the TV. "..createHref("skip="..escape(scrubbed)..";", "SKIP").." "..createHref("block=1;ckey="..ckey, "BLOCK"))
                 table.insert(queuedRequests, { url = scrubbed, ckey = ckey, startPos = startTime, duration = duration })
 				fetchVideo()
 				user:call_proc("playsound_local", nil, "sound/misc/asay_ping.ogg", 15)
 				dm.global_proc("to_chat", user, "<font color='blue'><b>Your video request was queued.</b></font>")
 			else
-				dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", user).." requested the youtube video <span class='linkify'>"..scrubbed..
-					"</span> to be played on the TV. "..createHref("link="..escape(scrubbed)..";ckey="..ckey..";startTime="..startTime..";duration="..duration..";play_id="..requestCounter, "PLAY").." "..createHref("reject=1;reject_id="..requestCounter..";ckey="..ckey, "REJECT").." "..createHref("block=1;ckey="..ckey, "BLOCK"))
+				dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", user).." requested the youtube video <span class='linkify'>"..scrubbed.."</span> to be played on the TV. "..createHref("link="..escape(scrubbed)..";ckey="..ckey..";startTime="..startTime..";duration="..duration..";play_id="..requestCounter, "PLAY").." "..createHref("reject=1;reject_id="..requestCounter..";ckey="..ckey, "REJECT").." "..createHref("block=1;ckey="..ckey, "BLOCK"))
 			end
 				
 			requestCounter += 1
@@ -760,7 +745,6 @@ local function openAdminSettings(user)
 	browser:call_proc("set_content", data)
 	browser:call_proc("open")
 end
-
 SS13.register_signal(tv, "atom_attack_hand", function(_, user)
 	makeRequest(user)
 end)
@@ -783,6 +767,8 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 			voteSkipData.voteSkip += 1
 			voteSkipData.voteSkipVoters[userCkey] = true
 			if voteSkipData.voteSkip >= voteSkipRequired then
+				tv:call_proc("say", "Voteskipped current channel.")
+				dm.global_proc("message_admins", "TV: Skipped "..dm.global_proc("sanitize", playingChannel.title or ""))
 				playingChannel = nil
 			end
 			user:call_proc("balloon_alert", user, "voted to skip current channel")
@@ -820,7 +806,6 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
             saveRequired = true
 			openClientSettings(user)
 		end
-
 		if userCkey == admin or trustedAdmins[userCkey] then
 			if href_list:get("link") ~= nil then
 				local youtubeLink = href_list:get("link")
@@ -916,14 +901,12 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				end
 				voteSkipRequired = newVoteSkipAmount
 			end
-
             if href_list:get("ui") then 
                 openAdminSettings(user)
             end
 		end
 	end)
 end)
-
 SS13.register_signal(tv, "atom_examine", function(_, examiner, examine_list)
 	local ckey = examiner:get_var("ckey")
 	local settingsData = createHref("settings=1", "OPEN CLIENT TV SETTINGS")
@@ -957,14 +940,13 @@ SS13.register_signal(tv, "ctrl_shift_click", function(_, clicker)
 	end
 end)
 SS13.register_signal(tv, "ctrl_click", function(_, clicker)
-	if clicker:get_var("ckey") == admin then
+	if trustedAdmins[clicker:get_var("ckey")] then
 		makeRequest(clicker, true)
 	else
 		makeRequest(clicker)
 	end
 end)
 function doNothing() return 1 end
-
 SS13.register_signal(tv, "tool_act_screwdriver", doNothing)
 SS13.register_signal(tv, "tool_secondary_act_screwdriver", doNothing)
 SS13.register_signal(tv, "tool_act_crowbar", doNothing)

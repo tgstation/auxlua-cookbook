@@ -3,16 +3,18 @@ SS13 = require("SS13")
 local admin = "waltermeldron"
 local adminUser = dm.global_vars:get_var("GLOB"):get_var("directory"):get(admin)
 
-local SCROLL_SPAWN_AMOUNT = 10
+local SCROLL_SPAWN_AMOUNT = 1
 
 local MODE_RUNITE = 1
 local MODE_GRIND = 2
 local MODE_CLICKER = 3
+-- TODO: implement
+local MODE_PRECISION = 4
 
 local MODE = MODE_RUNITE
-local NON_GRIND_SPEED_BOOST = 1
+local NON_GRIND_SPEED_BOOST = 2
 local TIER_CAP = 3
-local CRAFTABLE_TIER_CAP = 15
+local CRAFTABLE_TIER_CAP = 50
 
 local CRAFTABLE_QUALITY_REQ_MULT = 0
 local FANTASY_TIER_PER_QUALITY = 8
@@ -21,6 +23,8 @@ if TIER_CAP then
 	QUALITY_CAP = TIER_CAP * FANTASY_TIER_PER_QUALITY
 end
 local CRAFTABLE_QUALITY_CAP = CRAFTABLE_TIER_CAP * FANTASY_TIER_PER_QUALITY
+
+local UPPER_REFINEMENT_LIMIT = (2 ^ 1023) * 1.999
 
 local function notifyPlayer(ply, msg)
 	ply:call_proc("balloon_alert", ply, msg)
@@ -211,13 +215,15 @@ local craftable = {
 		materialsRequired = 30,
 		typepath = "/obj/item/gun/magic",
 		blacklist = {
-			"/obj/item/gun/magic/wand/death/debug"
+			"/obj/item/gun/magic/wand/death/debug",
+			"/obj/item/gun/magic/wand/resurrection/debug",
+			"/obj/item/gun/magic/wand/safety/debug"
 		},
 		materialUnits = 10,
 	},
 	["Any"] = {
 		minimumLevel = 500,
-		materialsRequired = 50,
+		materialsRequired = 15,
 		typepath = "/obj/item",
 		blacklist = {
 			"/obj/item/paper",
@@ -860,6 +866,7 @@ local function setupHuman(human)
 					local exceededAmount = (itemProgress.refinedAmount - limit) / increaseAmount
 					itemProgress.refinedAmount += increaseAmount / (2 ^ exceededAmount)
 				end
+				itemProgress.refinedAmount = math.min(itemProgress.refinedAmount, UPPER_REFINEMENT_LIMIT)
 				local increasedAmount = itemProgress.refinedAmount - previousRefinedAmount
 				if itemProgress.diminishing == 3 or math.abs(itemProgress.refinedAmount - previousRefinedAmount) < 50 then
 					visualColor = "#ff0000"

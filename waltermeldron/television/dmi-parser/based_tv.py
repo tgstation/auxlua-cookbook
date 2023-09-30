@@ -41,7 +41,7 @@ def main(youtubeUrl, size = 1, sampling = "nearest", frameRate = 30, startPositi
         "match_filter": longer_than_an_hour,
         "forceurl": True,
     }
-    youtubeId = re.search("(v=|v/|vi=|vi/|youtu.be/)([a-zA-Z0-9_-]+)", youtubeUrl)
+    youtubeId = re.search("(v=|v/|vi=|vi/|youtu.be/|shorts/)([a-zA-Z0-9_-]+)", youtubeUrl)
     # Just in case it's garbage
     if not youtubeId or len(youtubeId.group(2)) > 16:
         return ("0",)

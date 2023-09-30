@@ -184,7 +184,7 @@ local currentValidLoop
 
 local function start_gorilla_loop(validLoop)
     while true do
-        if gorilla:is_null() or gorilla:get_var("stat") == 4 or gorillaTarget == nil or currentValidLoop ~= validLoop then
+        if not SS13.is_valid(gorilla) or gorilla:get_var("stat") == 4 or gorillaTarget == nil or currentValidLoop ~= validLoop then
             gorillaTarget = nil
             return
         end

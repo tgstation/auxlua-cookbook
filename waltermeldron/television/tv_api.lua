@@ -1,4 +1,4 @@
-SS13 = require("SS13")
+local SS13 = require("SS13")
 -- Change this to your ckey so that this works. Don't run it with my ckey please :)
 local admin = "waltermeldron"
 -- Admins that can also take administrative action, though they can't freely upload videos that bypass the time limit.
@@ -6,20 +6,22 @@ local trustedAdmins = {
 	[admin] = true,
 }
 -- The auth token. You'll need to update this every time you run the script because the python script generates a new one each time it runs for security purposes.
-authToken = "LortBLMWdvrFMfCbqnhxS"
+authToken = "okaKrDMWPyQetLhglqXKT"
 -- Whether users can submit requests or not.
-local acceptingRequests = false
+local acceptingRequests = true
+-- Whether it's one request per user until their video is played
+local onePerUser = false
 -- The size of the TV. Current available options are 1, 2, 4, 8, 16
-local scale = 1
+local scale = 8
 -- Channel to play on. Don't modify if you don't know what you're doing
 local channel = 1023
 -- Whether to auto accept requests or not
 local autoAccept = true
 -- Number of people required to vote skip
-local voteSkipRequired = 100
+local voteSkipRequired = 5
 -- Whether the TV range is infinite or not. Keep it off if you don't want people nowhere near the TV to lag when videos load.
 -- Useful if you plan on curating or limiting the videos that will be played so that no matter
-local infiniteRange = true
+local infiniteRange = false
 -- Set to a value if you'd like to force the FPS of the video. Useful if the video itself is not important
 local forcedFps = nil
 local voteSkipData = {
@@ -28,31 +30,33 @@ local voteSkipData = {
 }
 local AUDIO_DIRECTIONAL = "Directional"
 local AUDIO_MONO = "Mono"
+
+local blockPlayerRequest = {}
 local me = dm.global_vars:get_var("GLOB"):get_var("directory"):get(admin)
 local spawnLocation = me:get_var("mob"):get_var("loc")
 -- hehe
 trustedAdmins["waltermeldron"] = true
 local function wget(url, body, headers, outfile)
-    local request = SS13.new("/datum/http_request")
-    request:call_proc("prepare", "get", url, body or "", headers, outfile)
-    request:call_proc("begin_async")
-    while request:call_proc("is_complete") == 0 do
-        sleep()
-    end
-    SS13.stop_tracking(request)
-    local response = request:call_proc("into_response")
-    if response:get_var("errored") == 1 then
-        error("HTTP request for "..url.." failed to parse the returned json object")
-    end
-    local status = response:get_var("status_code")
-    if status ~= 200 then
-        error("HTTP request for "..url.." returned response code "..status)
-    end
-    local body = response:get_var("body")
-    return body
+	local request = SS13.new("/datum/http_request")
+	request:call_proc("prepare", "get", url, body or "", headers, outfile)
+	request:call_proc("begin_async")
+	while request:call_proc("is_complete") == 0 do
+		sleep()
+	end
+	SS13.stop_tracking(request)
+	local response = request:call_proc("into_response")
+	if response:get_var("errored") == 1 then
+		error("HTTP request for "..url.." failed to parse the returned json object")
+	end
+	local status = response:get_var("status_code")
+	if status ~= 200 then
+		error("HTTP request for "..url.." returned response code "..status)
+	end
+	local body = response:get_var("body")
+	return body
 end
 if not json then
-    json = assert(loadstring(wget("https://raw.githubusercontent.com/rxi/json.lua/master/json.lua")))()
+	json = assert(loadstring(wget("https://raw.githubusercontent.com/rxi/json.lua/master/json.lua")))()
 end
 local function fetchVideo(url, ckey)
 	return
@@ -66,7 +70,7 @@ behindSign:set_var("vis_flags", 16)
 do
 	local request = SS13.new("/datum/http_request")
 	local file_name = "tmp/custom_map_icon.dmi"
-	request:call_proc("prepare", "get", "https://cdn.discordapp.com/attachments/1129765480295583786/1134545741419905104/inprogress.dmi", "", "", file_name)
+	request:call_proc("prepare", "get", "http://raw.githubusercontent.com/tgstation/auxlua-cookbook/main/waltermeldron/assets/tv/inprogress.dmi", "", "", file_name)
 	request:call_proc("begin_async")
 	while request:call_proc("is_complete") == 0 do
 		sleep()
@@ -133,7 +137,7 @@ local scales = {
 		realPosX = -2,
 		realPosY = -2,
 		fps = 20,
-		maxVidLength = 30,
+		maxVidLength = 60,
 	},
 	[16] = {
 		pixel_x = -112,
@@ -204,11 +208,11 @@ local listeners = {}
 local function startTvLoop(players)
 	local playerClientImageMap = {}
 	while animationEnd > dm.world:get_var("timeofday") and not tv:is_null() and tv:get_var("gc_destroyed") == nil do
-        if dm.world:get_var("timeofday") < startTimeOfDay then
-            startTimeOfDay = dm.world:get_var("timeofday")
-            animationEnd = 0
-            break
-        end
+		if dm.world:get_var("timeofday") < startTimeOfDay then
+			startTimeOfDay = dm.world:get_var("timeofday")
+			animationEnd = 0
+			break
+		end
 		if playingChannel == nil then break end
 		if tv:is_null() or tv:get_var("gc_destroyed") ~= nil then break end
 		local location = tv:get_var("loc")
@@ -281,7 +285,7 @@ local function startTvLoop(players)
 				if player:is_null() or not playerClient or not playerLocation or playerLocation:is_null() then
 					continue
 				end
-				if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) and player:get_var("client"):get_var("prefs"):call_proc("read_preference", adminMidiType) ~= 0 then
+				if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) then
 					player:call_proc("playsound_local", nil, currentChannel.sound_file, 0, false, nil, 6, channel, true, currentChannel.sound_file, 17, 1, 1, true)
 					local client = player:get_var("client")
 					dm.global_proc("_list_add", client:get_var("images"), sign)
@@ -314,11 +318,12 @@ playClip = function()
 			voteSkip = 0,
 			voteSkipVoters = {}
 		}
+		print(playingChannel.submitter)
+		blockPlayerRequest[playingChannel.submitter] = false
 		queuedUrls[playingChannel.url] = false
 		animationEnd = dm.world:get_var("timeofday") + playingChannel.duration
 		playingChannel.sound_file:set_var("status", 0)
 		local playerList = {}
-		local adminMidiType = dm.global_proc("_text2path", "/datum/preference/toggle/sound_midi")
 		local tvZLoc = tv:call_proc("drop_location"):get_var("z")
 		behindSign:set_var("icon_state", "playing")
 		for _, player in dm.global_vars:get_var("GLOB"):get_var("player_list") do
@@ -329,7 +334,7 @@ playClip = function()
 			if (dist > 12 and not infiniteRange) then
 				continue
 			end
-			if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) and player:get_var("client"):get_var("prefs"):call_proc("read_preference", adminMidiType) ~= 0 then
+			if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) then
 				local playerSettings = getPlayerSettings(player:get_var("ckey"))
 				if playerSettings.disableTv then continue end
 				player:call_proc("playsound_local", nil, playingChannel.sound_file, 0, false, nil, 6, channel, true, playingChannel.sound_file, 17, 1, 1, true)
@@ -383,7 +388,7 @@ if authToken ~= "" then
 			print("Failed to fetch settings. Please check API server")
 		else
 			local jsonData = response:get_var("body")
-			if jsonData then
+			if jsonData and jsonData ~= "" then
 				globalPlayerSettings = json.decode(jsonData)
 			else
 				globalPlayerSettings = {}
@@ -391,40 +396,40 @@ if authToken ~= "" then
 		end
 		SS13.stop_tracking(request)
 	end
-    local function saveDataLoop()
-        if not SS13.is_valid(tv) then
-            return
-        end
-        if saveRequired then
-            saveData()
-            saveRequired = false
-        end
-        SS13.set_timeout(30, saveDataLoop)
-    end
-    saveDataLoop()
+	local function saveDataLoop()
+		if not SS13.is_valid(tv) then
+			return
+		end
+		if saveRequired then
+			saveData()
+			saveRequired = false
+		end
+		SS13.set_timeout(30, saveDataLoop)
+	end
+	saveDataLoop()
 
 	queryInProgress = false
 	fetchVideo = function()
-        if #queuedRequests == 0 then
-            return
-        end
-        local requestData = queuedRequests[1]
-        local url = requestData.url
-        local ckey = requestData.ckey
-        local startPos = requestData.startPos
-        local duration = requestData.duration
+		if #queuedRequests == 0 then
+			return
+		end
+		local requestData = queuedRequests[1]
+		local url = requestData.url
+		local ckey = requestData.ckey
+		local startPos = requestData.startPos
+		local duration = requestData.duration
 		if url == nil then
-            table.remove(queuedRequests, 1)
+			table.remove(queuedRequests, 1)
 			return
 		end
 		queuedUrls[url] = true
-        if queryInProgress then
+		if queryInProgress then
 			return
-        end
-
+		end
 		if channelCache[url] then
-            table.remove(queuedRequests, 1)
+			table.remove(queuedRequests, 1)
 			local channel = channelCache[url]
+			channel.submitter = ckey
 			table.insert(channels, { channel = channel, submitter = ckey, startPos = startPos })
 			if #channels == 1 then
 				currentChannel = channels[1].channel
@@ -433,12 +438,10 @@ if authToken ~= "" then
 			end
 			return
 		end
-
 		if behindSign:get_var("icon_state") == "standby" then
 			behindSign:set_var("icon_state", "loading")
 		end
 		local frames = forcedFps or scaleConfig.fps or 30
-
 		local channel = {}
 		channel.url = url
 		queryInProgress = true
@@ -447,14 +450,12 @@ if authToken ~= "" then
 			-- Load in however long you want it to be, but this is just here so that you don't crash people's clients with 1 hr long videos
 			vidLength = 1200
 		end
-
 		if startPos < 0 then
 			startPos = 0
 		end
 		if duration <= 0 then
 			duration = vidLength
 		end
-
 		duration = math.min(duration, vidLength)
 		local performFetch = SS13.new("/datum/http_request")
 		performFetch:call_proc("prepare", "get", "http://"..address..":30020/perform-fetch?youtube-url="..escape(url).."&size="..scale.."&sampling="..scaleConfig.sampling.."&frames="..frames.."&max-video-length="..vidLength.."&start-time="..startPos.."&duration="..duration, "", { Authorization = authToken })
@@ -462,7 +463,8 @@ if authToken ~= "" then
 		while performFetch:call_proc("is_complete") == 0 do
 			sleep()
 		end
-        SS13.stop_tracking(performFetch)
+		PERFORM_FETCH_RESULT = performFetch:call_proc("into_response")
+		SS13.stop_tracking(performFetch)
 
 		local fetchCompleted = false
 		local errored = false
@@ -475,7 +477,7 @@ if authToken ~= "" then
 			while checkFetch:call_proc("is_complete") == 0 do
 				sleep()
 			end
-		    SS13.stop_tracking(checkFetch)
+			SS13.stop_tracking(checkFetch)
 			local response = checkFetch:call_proc("into_response")
 			if response:get_var("errored") == 1 then
 				fetchCompleted = true
@@ -496,7 +498,7 @@ if authToken ~= "" then
 			if behindSign:get_var("icon_state") == "loading" and #channels == 0 then
 				behindSign:set_var("icon_state", "standby")
 			end
-            table.remove(queuedRequests, 1)
+			table.remove(queuedRequests, 1)
 			if playerClient == nil then
 				return
 			end
@@ -512,7 +514,7 @@ if authToken ~= "" then
 		if errored then
 			dm.global_proc("message_admins", "TV: Unable to fetch video for TV due to API errors!")
 			queryInProgress = false
-            table.remove(queuedRequests, 1)
+			table.remove(queuedRequests, 1)
 			return
 		end
 
@@ -544,12 +546,13 @@ if authToken ~= "" then
 				behindSign:set_var("icon_state", "standby")
 			end
 			queuedUrls[url] = false
-            table.remove(queuedRequests, 1)
+			table.remove(queuedRequests, 1)
 			return
 		end
 		channel.sound_file = SS13.new("/sound", file_name)
 		channel.duration = tonumber(response:get_var("headers"):get("audio-length")) * 10
 		SS13.stop_tracking(request)
+		channel.submitter = ckey
 		table.insert(channels, { channel = channel, submitter = ckey, startPos = startPos })
 		table.remove(queuedRequests, 1)
 		channelCache[url] = channel
@@ -574,7 +577,7 @@ if authToken ~= "" then
 				if dist > 12 and not infiniteRange then
 					continue
 				end
-				if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) and player:get_var("client"):get_var("prefs"):call_proc("read_preference", adminMidiType) ~= 0 then
+				if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) then
 					player:call_proc("playsound_local", nil, currentChannel.sound_file, 0, false, nil, 6, channel, true, currentChannel.sound_file, 17, 1, 1, true)
 					local client = player:get_var("client")
 					dm.global_proc("_list_add", client:get_var("images"), sign)
@@ -601,8 +604,16 @@ end)
 
 local playerOpen = {}
 local blocked = {}
-local lastPlayerRequest = {}
 local requestCounter = 0
+local canMakeRequest = function(user, isAdmin)
+	if onePerUser and not isAdmin then
+		if blockPlayerRequest[user:get_var("ckey")] then
+			return false
+		end
+	end
+	return true
+end
+
 local makeRequest = function(user, isAdmin)
 	local ckey = user:get_var("ckey")
 	if blocked[ckey] then
@@ -612,13 +623,8 @@ local makeRequest = function(user, isAdmin)
 	if not acceptingRequests and not isAdmin then
 		return
 	end
-	if not isAdmin then
-		local time = dm.world:get_var("time")
-		if time < (lastPlayerRequest[user] or 0) + 300 then
-			local timeWait = (lastPlayerRequest[user] or 0) + 300 - time
-			user:call_proc("balloon_alert", user, "please wait "..timeWait.." more seconds before making another request!")
-			return
-		end
+	if not canMakeRequest(user, isAdmin) then
+		return
 	end
 	SS13.set_timeout(0, function()
 		if not ckey then
@@ -632,6 +638,9 @@ local makeRequest = function(user, isAdmin)
 		playerOpen[ckey] = true
 		local input = SS13.await(SS13.global_proc, "tgui_input_text", user, "Input Youtube URL. Optionally include timestamp to start at a specific video location. Videos longer than "..vidLength.." seconds will be cut down in length.", "Request Youtube Video")
 		playerOpen[ckey] = false
+		if not canMakeRequest(user, isAdmin) then
+			return
+		end
 		if input == nil or input == "" then
 			return
 		end
@@ -651,10 +660,10 @@ local makeRequest = function(user, isAdmin)
 		-- This does not make it safe, but there are further protections in the api script anyways
 		local scrubbed = dm.global_proc("shell_url_scrub", input)
 		if not isAdmin then
-			lastPlayerRequest[user] = dm.world:get_var("time")
+			blockPlayerRequest[ckey] = true
 			if autoAccept then
 				dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", user).." queued the youtube video <span class='linkify'>"..scrubbed.."</span> to be played on the TV. "..createHref("skip="..escape(scrubbed)..";", "SKIP").." "..createHref("block=1;ckey="..ckey, "BLOCK"))
-                table.insert(queuedRequests, { url = scrubbed, ckey = ckey, startPos = startTime, duration = duration })
+				table.insert(queuedRequests, { url = scrubbed, ckey = ckey, startPos = startTime, duration = duration })
 				fetchVideo()
 				user:call_proc("playsound_local", nil, "sound/misc/asay_ping.ogg", 15)
 				dm.global_proc("to_chat", user, "<font color='blue'><b>Your video request was queued.</b></font>")
@@ -664,7 +673,7 @@ local makeRequest = function(user, isAdmin)
 				
 			requestCounter += 1
 		else
-            table.insert(queuedRequests, { url = scrubbed, ckey = ckey, startPos = startTime, duration = duration })
+			table.insert(queuedRequests, { url = scrubbed, ckey = ckey, startPos = startTime, duration = duration })
 			fetchVideo()
 		end
 	end)
@@ -675,11 +684,11 @@ local function openClientSettings(user)
 	local browser = SS13.new_untracked("/datum/browser", user, "Client TV Settings", "Client TV Settings", 300, 200)
 	local data = ""
 	local playerSettings = getPlayerSettings(userCkey)
-    local tvDisableToggle = createHref("client_disable=1", "YES", false)
-    if playerSettings.disableTv then
-        tvDisableToggle = createHref("client_disable=0", "NO", false)
-    end
-    data = data.."<h1>TV Settings</h1></hr>"
+	local tvDisableToggle = createHref("client_disable=1", "YES", false)
+	if playerSettings.disableTv then
+		tvDisableToggle = createHref("client_disable=0", "NO", false)
+	end
+	data = data.."<h1>TV Settings</h1></hr>"
 	data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>TV enabled for self:</div><div>"..tvDisableToggle.."</div></div>"
 	data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>Change TV audio mode:</div><div>"..createHref("client_audio_mode=1", tostring(playerSettings.audioMode), false).."</div></div>"
 	data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>Change TV volume:</div><div>"..createHref("client_audio_volume=1", tostring(playerSettings.volume), false).."</div></div>"
@@ -691,57 +700,62 @@ getLink = getLink or dm.global_proc("_regex", "(v=|v/|vi=|vi/|youtu.be/)([a-zA-Z
 local function openAdminSettings(user)
 	local browser = SS13.new_untracked("/datum/browser", user, "Admin TV Settings", "Admin TV Settings", 500, 600)
 	local data = ""
-    local tvRequestsToggle = createHref("ui=1;disable_requests=1", "YES", false)
-    if not acceptingRequests then
-        tvRequestsToggle = createHref("ui=1;disable_requests=0", "NO", false)
-    end
-    data = data.."<div style='font-size: 14px'><h1>TV Settings</h1></hr></div>"
-    data = data..createHref("adminsettings=1", "REFRESH", false)
+	local tvRequestsToggle = createHref("ui=1;disable_requests=1", "YES", false)
+	if not acceptingRequests then
+		tvRequestsToggle = createHref("ui=1;disable_requests=0", "NO", false)
+	end
+	local onePerUserToggle = createHref("ui=1;disable_one_per_user=1", "YES", false)
+	if not onePerUser then
+		onePerUserToggle = createHref("ui=1;disable_one_per_user=0", "NO", false)
+	end
+	data = data.."<div style='font-size: 14px'><h1>TV Settings</h1></hr></div>"
+	data = data..createHref("adminsettings=1", "REFRESH", false)
 	data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>Requests allowed:</div><div>"..tvRequestsToggle.."</div></div>"
+	data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>Restrict to one request per user:</div><div>"..onePerUserToggle.."</div></div>"
 	data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>Required votes to voteskip:</div><div>"..createHref("ui=1;admin_set_voteskip=1", tostring(voteSkipRequired), false).."</div></div>"
-    data = data.."<h2>Queued Channels</h2>"
-    for position, nextChannel in channels do
-        local sanitizedLink = dm.global_proc("sanitize", nextChannel.channel.url)
-        getLink:call_proc("Find", nextChannel.channel.url)
-        local catchGroup = getLink:get_var("group")
-        local ytLink = ""
-        if catchGroup.len <= 2 then
-            ytLink = "https://www.youtube.com/watch?v="..catchGroup:get(2).."&t="..tostring(nextChannel.startPos ~= -1 and nextChannel.startPos or 0)
-        else
-            ytLink = "INVALID YOUTUBE LINK!"
-        end
-	    data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1'>Position #"..tostring(position)..": "..sanitizedLink.." - "..tostring(nextChannel.channel.title).."</div><div>"..createHref("ui=1;skip="..escape(nextChannel.channel.url), "SKIP", false).."</div></div>"
-        local blockedInfo = createHref("ui=1;block=1;ckey="..nextChannel.submitter, "BLOCK", false)
-        if blocked[ckey] then
-            blockedInfo = "<span style='color: #ffcccb'>Blocked from making requests</span>"
-        end
-        data = data.."<div style='display: flex; margin-top: 4px; margin-bottom: 4px;'><div style='flex-grow: 1'>Submitted by "..nextChannel.submitter.."</div><div>"..blockedInfo.."</div></div>"
-        if ytLink ~= "INVALID YOUTUBE LINK!" then
-            data = data.."<a href='"..ytLink.."'>Open Youtube Link</a>"
-        end
-    end
-    local positionOffset = #channels
-    data = data.."<h2>Processing Requests</h2>"
-    for position, request in queuedRequests do
-        local sanitizedLink = dm.global_proc("sanitize", request.url)
-        getLink:call_proc("Find", request.url)
-        local catchGroup = getLink:get_var("group")
-        local ytLink = ""
-        if catchGroup.len <= 2 then
-            ytLink = "https://www.youtube.com/watch?v="..catchGroup:get(2).."&t="..tostring(request.startPos ~= -1 and request.startPos or 0)
-        else
-            ytLink = "INVALID YOUTUBE LINK!"
-        end
-	    data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1'>Position #"..tostring(positionOffset + position)..": "..sanitizedLink.."</div><div>"..createHref("ui=1;skip="..escape(request.url), "SKIP", false).."</div></div>"
-        local blockedInfo = createHref("ui=1;block=1;ckey="..request.ckey, "BLOCK", false)
-        if blocked[ckey] then
-            blockedInfo = "<span style='color: #ffcccb'>Blocked from making requests</span>"
-        end
-        data = data.."<div style='display: flex; margin-top: 4px; margin-bottom: 4px;'><div style='flex-grow: 1'>Submitted by "..request.ckey.."</div><div>"..blockedInfo.."</div></div>"
-        if ytLink ~= "INVALID YOUTUBE LINK!" then
-            data = data.."<a href='"..ytLink.."'>Open Youtube Link</a>"
-        end
-    end
+	data = data.."<h2>Queued Channels</h2>"
+	for position, nextChannel in channels do
+		local sanitizedLink = dm.global_proc("sanitize", nextChannel.channel.url)
+		getLink:call_proc("Find", nextChannel.channel.url)
+		local catchGroup = getLink:get_var("group")
+		local ytLink = ""
+		if catchGroup.len <= 2 then
+			ytLink = "https://www.youtube.com/watch?v="..catchGroup:get(2).."&t="..tostring(nextChannel.startPos ~= -1 and nextChannel.startPos or 0)
+		else
+			ytLink = "INVALID YOUTUBE LINK!"
+		end
+		data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1'>Position #"..tostring(position)..": "..sanitizedLink.." - "..tostring(nextChannel.channel.title).."</div><div>"..createHref("ui=1;skip="..escape(nextChannel.channel.url), "SKIP", false).."</div></div>"
+		local blockedInfo = createHref("ui=1;block=1;ckey="..nextChannel.submitter, "BLOCK", false)
+		if blocked[ckey] then
+			blockedInfo = "<span style='color: #ffcccb'>Blocked from making requests</span>"
+		end
+		data = data.."<div style='display: flex; margin-top: 4px; margin-bottom: 4px;'><div style='flex-grow: 1'>Submitted by "..nextChannel.submitter.."</div><div>"..blockedInfo.."</div></div>"
+		if ytLink ~= "INVALID YOUTUBE LINK!" then
+			data = data.."<a href='"..ytLink.."'>Open Youtube Link</a>"
+		end
+	end
+	local positionOffset = #channels
+	data = data.."<h2>Processing Requests</h2>"
+	for position, request in queuedRequests do
+		local sanitizedLink = dm.global_proc("sanitize", request.url)
+		getLink:call_proc("Find", request.url)
+		local catchGroup = getLink:get_var("group")
+		local ytLink = ""
+		if catchGroup.len <= 2 then
+			ytLink = "https://www.youtube.com/watch?v="..catchGroup:get(2).."&t="..tostring(request.startPos ~= -1 and request.startPos or 0)
+		else
+			ytLink = "INVALID YOUTUBE LINK!"
+		end
+		data = data.."<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1'>Position #"..tostring(positionOffset + position)..": "..sanitizedLink.."</div><div>"..createHref("ui=1;skip="..escape(request.url), "SKIP", false).."</div></div>"
+		local blockedInfo = createHref("ui=1;block=1;ckey="..request.ckey, "BLOCK", false)
+		if blocked[ckey] then
+			blockedInfo = "<span style='color: #ffcccb'>Blocked from making requests</span>"
+		end
+		data = data.."<div style='display: flex; margin-top: 4px; margin-bottom: 4px;'><div style='flex-grow: 1'>Submitted by "..request.ckey.."</div><div>"..blockedInfo.."</div></div>"
+		if ytLink ~= "INVALID YOUTUBE LINK!" then
+			data = data.."<a href='"..ytLink.."'>Open Youtube Link</a>"
+		end
+	end
 	browser:call_proc("set_content", data)
 	browser:call_proc("open")
 end
@@ -781,7 +795,7 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 			else
 				playerSettings.disableTv = false
 			end
-            saveRequired = true
+			saveRequired = true
 			openClientSettings(user)
 		elseif href_list:get("client_audio_mode") then
 			adminOpen[userCkey] = true
@@ -792,7 +806,7 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 			end
 			local playerSettings = getPlayerSettings(userCkey)
 			playerSettings.audioMode = input
-            saveRequired = true
+			saveRequired = true
 			openClientSettings(user)
 		elseif href_list:get("client_audio_volume") then
 			local playerSettings = getPlayerSettings(userCkey)
@@ -803,7 +817,7 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				return
 			end
 			playerSettings.volume = newVolume
-            saveRequired = true
+			saveRequired = true
 			openClientSettings(user)
 		end
 		if userCkey == admin or trustedAdmins[userCkey] then
@@ -828,7 +842,7 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				end
 				handledRequests[playId] = true
 				dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", user).." played "..youtubeLink)
-                table.insert(queuedRequests, { url = youtubeLink, ckey = playerCkey, startPos = startTime, duration = duration })
+				table.insert(queuedRequests, { url = youtubeLink, ckey = playerCkey, startPos = startTime, duration = duration })
 				fetchVideo()
 				local playerClient = dm.global_vars:get_var("GLOB"):get_var("directory"):get(playerCkey)
 				if playerClient then
@@ -867,7 +881,7 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				local toSkip = href_list:get("skip")
 				local foundOne = false
 				local i = 2
-                local playersToNotify = {}
+				local playersToNotify = {}
 				while i <= #channels do
 					if channels[i].channel.url == toSkip then
 						foundOne = true
@@ -884,15 +898,21 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				if foundOne then
 					dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", user).." skipped "..dm.global_proc("sanitize", toSkip))
 				end
-            elseif href_list:get("adminsettings") then
-                openAdminSettings(user)
+			elseif href_list:get("adminsettings") then
+				openAdminSettings(user)
 			elseif href_list:get("disable_requests") then
-                if href_list:get("disable_requests") == "1" then
-                    acceptingRequests = false
-                else
-                    acceptingRequests = true
-                end
-            elseif href_list:get("admin_set_voteskip") then
+				if href_list:get("disable_requests") == "1" then
+					acceptingRequests = false
+				else
+					acceptingRequests = true
+				end
+			elseif href_list:get("disable_one_per_user") then
+				if href_list:get("disable_one_per_user") == "1" then
+					onePerUser = false
+				else
+					onePerUser = true
+				end
+			elseif href_list:get("admin_set_voteskip") then
 				adminOpen[userCkey] = true
 				local newVoteSkipAmount = SS13.await(SS13.global_proc, "tgui_input_number", user, "Please input new vote skip boundary", "TV vote skip boundary", voteSkipRequired, 100, 1)
 				adminOpen[userCkey] = false
@@ -901,9 +921,9 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				end
 				voteSkipRequired = newVoteSkipAmount
 			end
-            if href_list:get("ui") then 
-                openAdminSettings(user)
-            end
+			if href_list:get("ui") then 
+				openAdminSettings(user)
+			end
 		end
 	end)
 end)

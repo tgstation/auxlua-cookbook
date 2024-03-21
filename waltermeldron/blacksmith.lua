@@ -8,14 +8,11 @@ local SCROLL_SPAWN_AMOUNT = 1
 local MODE_RUNITE = 1
 local MODE_GRIND = 2
 local MODE_CLICKER = 3
--- TODO: implement
 local MODE_PRECISION = 4
-
 local MODE = MODE_RUNITE
 local NON_GRIND_SPEED_BOOST = 2
-local TIER_CAP = 3
+local TIER_CAP = 5
 local CRAFTABLE_TIER_CAP = 50
-
 local CRAFTABLE_QUALITY_REQ_MULT = 0
 local FANTASY_TIER_PER_QUALITY = 8
 local QUALITY_CAP
@@ -109,9 +106,9 @@ anvilIcon = anvilIcon or nil
 if #refiningSound == 0 or anvilIcon == nil then
 	refiningSound = {}
 	local refiningSoundUrl = {
-		"https://cdn.discordapp.com/attachments/1129765480295583786/1135175124618850354/blacksmith.ogg",
-		"https://cdn.discordapp.com/attachments/1129765480295583786/1135176954421715035/blacksmith2.ogg",
-		"https://cdn.discordapp.com/attachments/1129765480295583786/1135176963171024967/blacksmith3.ogg"
+		"https://raw.githubusercontent.com/tgstation/auxlua-cookbook/main/waltermeldron/assets/blacksmith/blacksmith.ogg",
+		"https://raw.githubusercontent.com/tgstation/auxlua-cookbook/main/waltermeldron/assets/blacksmith/blacksmith2.ogg",
+		"https://raw.githubusercontent.com/tgstation/auxlua-cookbook/main/waltermeldron/assets/blacksmith/blacksmith3.ogg"
 	}
 	for _, url in refiningSoundUrl do
 		local request = SS13.new("/datum/http_request")
@@ -126,7 +123,7 @@ if #refiningSound == 0 or anvilIcon == nil then
 	do
 		local request = SS13.new("/datum/http_request")
 		local file_name = "tmp/custom_map_icon.dmi"
-		request:call_proc("prepare", "get", "https://cdn.discordapp.com/attachments/1129765480295583786/1135194525556539513/anvil.dmi", "", "", file_name)
+		request:call_proc("prepare", "get", "https://raw.githubusercontent.com/tgstation/auxlua-cookbook/main/waltermeldron/assets/blacksmith/anvil.dmi", "", "", file_name)
 		request:call_proc("begin_async")
 		while request:call_proc("is_complete") == 0 do
 			sleep()
@@ -143,8 +140,8 @@ local function pairsByValue (t, f)
 		valueKey[value] = n
 	end
 	table.sort(a, f)
-	local i = 0      -- iterator variable
-	local iter = function ()   -- iterator function
+	local i = 0
+	local iter = function ()
 	  i = i + 1
 	  if a[i] == nil then return nil
 	  else return valueKey[a[i]], a[i]
@@ -200,16 +197,6 @@ local craftable = {
 		typepath = "/obj/item/grenade",
 		materialUnits = 10,
 	},
-	-- ["Meteor Gun"] = {
-	-- 	minimumLevel = 250,
-	-- 	materialsRequired = 50,
-	-- 	craftableAmount = 1,
-	-- 	typepath = "/obj/item/gun/energy/meteorgun",
-	-- 	blacklist = {
-	-- 		"/obj/item/gun/energy/meteorgun/pen"
-	-- 	},
-	-- 	materialUnits = 20,
-	-- },
 	["Magic Tool"] = {
 		minimumLevel = 300,
 		materialsRequired = 30,
@@ -428,7 +415,6 @@ local magnitudes = {
 	[40] = "watermillion",
 	[50] = "googleplex"
 }
-
 local function magnitudeToString(experience)
 	local magnitude = math.floor(math.max(math.log(math.max(experience, 1)) / math.log(10), 0) / 3)
 	experience = (experience / (10 ^ (magnitude * 3)))
@@ -590,7 +576,8 @@ local function setupHuman(human)
 		if expectedTier >= 10 then
 			ghostSound = "sound/effects/coin2.ogg"
 		end
-		dm.global_proc("notify_ghosts", tostring(human).." has crafted a "..replaceBadChars(tostring(refiningData.item)), ghostSound, nil, refiningData.item, nil, "orbit", false, true, nil, "Something Interesting!")
+		notifyText = tostring(human).." has crafted a "..replaceBadChars(tostring(refiningData.item))
+		dm.global_proc("notify_ghosts", notifyText, refiningData.item, notifyText, nil, false, "", ghostSound)
 	end
 
 	local refiningProgress = {}
@@ -748,8 +735,8 @@ local function setupHuman(human)
 						qualities = qualities .. "<span style='color: " .. rgbToHex(hsvToRgb(math.max(((i - 1) + currentQualityDisplay) * 5, 0), 1, 1, 1)) .. "'>"..bars.. "</span>"
 					end
 					if hueLoops > 0 then
-                        itemProgress.completionImage:call_proc("add_filter", "glowing", 2, dm.global_proc("outline_filter", 2, rgbToHex(hsvToRgb(math.max(hueLoops * 30, 0), 2, 1, 0.2))))
-                    end
+						itemProgress.completionImage:call_proc("add_filter", "glowing", 2, dm.global_proc("outline_filter", 2, rgbToHex(hsvToRgb(math.max(hueLoops * 30, 0), 2, 1, 0.2))))
+					end
 					itemProgress.completionImage:set_var("maptext", "<div class='maptext' style='background-color: ".. rgbToHex(hsvToRgb(math.max(expectedQuality * 5, 0), 1, 0.5, 1)) .. "; font-size: 4px;'>"..qualities.."<span style='color: #000000ff'>"..barRight.."</span></div>")
 				end
 				itemProgress.updateCompletionImage = updateCompletionImage
@@ -838,10 +825,10 @@ local function setupHuman(human)
 				end
 				local pointValueLevelBoost = pointValueTotal / 20
 				-- target:call_proc("set_custom_materials", materials)
-                local levelModifier = humanData.level
-                if MODE == MODE_RUNITE or MODE == MODE_CLICKER then
-                    levelModifier = math.max(determineQuality(itemProgress, true) + 2, 0) * 10 * NON_GRIND_SPEED_BOOST
-                end
+				local levelModifier = humanData.level
+				if MODE == MODE_RUNITE or MODE == MODE_CLICKER then
+					levelModifier = math.max(determineQuality(itemProgress, true) + 2, 0) * 10 * NON_GRIND_SPEED_BOOST
+				end
 
 				if MODE == MODE_CLICKER then
 					addExp(humanData, (1 + math.floor(pointValueLevelBoost)) * NON_GRIND_SPEED_BOOST, nil)

@@ -1,10 +1,9 @@
-SS13 = require("SS13")
+local SS13 = require("SS13")
 
 SS13.wait(1)
 
-local ADMIN_MODE = true
-
-local user = dm.global_vars:get_var("GLOB"):get_var("directory"):get("waltermeldron")
+local ADMIN_MODE = false
+local user = SS13.get_runner_client()
 local SHOULD_ASK_GHOSTS = SS13.await(SS13.global_proc, "tgui_alert", user, "Ask ghosts for a maintenance clown?", "Maintenance Clown", { "No", "Yes" }) == "Yes"
 local function notifyPlayer(ply, msg)
 	ply:call_proc("balloon_alert", ply, msg)
@@ -40,7 +39,6 @@ local function setupAntag(mind)
 		"brain_mod",
 		"burn_mod",
 		"brute_mod",
-		"clone_mod",
 		"cold_mod",
 		"heat_mod",
 		"hunger_mod",
@@ -91,11 +89,11 @@ local function setupAntag(mind)
 				[5] = "pull people into the floorboards"
 			},
 			Body = {
-				[1] = "5% damage reduction, virus and rad immunity",
-				[2] = "5% damage reduction, immune to flash",
-				[3] = "5% damage reduction, thermal vision",
-				[4] = "5% damage reduction",
-				[5] = "5% damage reduction, x-ray vision"
+				[1] = "+5% damage reduction, virus and rad immunity",
+				[2] = "+5% damage reduction, immune to flash",
+				[3] = "+5% damage reduction, thermal vision",
+				[4] = "+5% damage reduction, space immunity",
+				[5] = "+5% damage reduction, x-ray vision"
 			}
 		},
 		stats_description = {
@@ -153,6 +151,12 @@ local function setupAntag(mind)
 				[4] = function()
 					local player = mind:get_var("current")
 					reducePhysDamage(player, 5)
+					player:call_proc("add_traits", {
+						"resist_low_pressure",
+						"resist_high_pressure",
+						"resist_cold",
+						"resist_heat"
+					}, "clown_antag")
 				end,
 				[5] = function()
 					local player = mind:get_var("current")
@@ -194,6 +198,8 @@ local function setupAntag(mind)
 		"/area/station/service/hydroponics/garden/abandoned",
 		"/area/station/medical/abandoned"
 	}
+	local abstract_icon = SS13.new("/obj/effect/abstract", nil)
+	abstract_icon:set_var("icon_state", "mfoam")
 	local jaunter = nil
 	local active = false
 	local floorboardVictim
@@ -224,21 +230,25 @@ local function setupAntag(mind)
 			jumpIntoFloorboards:call_proc("StartCooldown", 1000)
 		end
 		player:set_var("anchored", true)
-		player:set_var("notransform", true)
+		dm.global_proc("_add_trait", player, "block_transformations", "clown_antag")
 		player:set_var("density", false)
 		player:set_var("pixel_z", -32)
 		if floorboardVictim ~= nil and not floorboardVictim:is_null() then
 			floorboardVictim:call_proc("Knockdown", 20)
 			floorboardVictim:set_var("pixel_z", -14)
 			floorboardVictim:set_var("anchored", true)
-			floorboardVictim:set_var("notransform", true)
+			dm.global_proc("_add_trait", floorboardVictim, "block_transformations", "clown_antag")
 			floorboardVictim:set_var("density", false)
-			floorboardVictim:set_var("plane", getPlane(-10, turf))
+			floorboardVictim:set_var("plane", getPlane(-6, turf))
 			floorboardVictim:set_var("layer", 1.9)
 		end
-		player:set_var("plane", getPlane(-10, turf))
+		player:set_var("plane", getPlane(-6, turf))
 		player:set_var("layer", 2)
-		dm.global_proc("_animate", turf, { pixel_x = 32 }, 5)
+		abstract_icon:call_proc("forceMove", turf)
+		abstract_icon:set_var("appearance", dm.global_proc("getFlatIcon", turf))
+		abstract_icon:set_var("plane", turf:get_var("plane"))
+		turf:set_var("alpha", 1)
+		dm.global_proc("_animate", abstract_icon, { pixel_w = 32 }, 5)
 		SS13.wait(0.5)
 		local itemsToUnset = {}
 		for _, item in turf:get_var("contents") do
@@ -264,26 +274,27 @@ local function setupAntag(mind)
 		if floorboardVictim ~= nil and not floorboardVictim:is_null() then
 			local directions = {1, 2, 4, 8}
 			floorboardVictim:call_proc("throw_at", dm.global_proc("_get_step", turf, directions[math.random(#directions)]), 10, 10)
-			floorboardVictim:set_var("plane", getPlane(-7, turf))
+			floorboardVictim:set_var("plane", getPlane(-4, turf))
 			floorboardVictim:set_var("layer", 4)
 			floorboardVictim:set_var("anchored", false)
-			floorboardVictim:set_var("notransform", nil)
+			dm.global_proc("_remove_trait", floorboardVictim, "block_transformations", "clown_antag")
 			floorboardVictim:set_var("density", true)
 			floorboardVictim:set_var("pixel_z", 0)
 			floorboardVictim = nil
 		end
-		player:set_var("plane", getPlane(-5, turf))
-		dm.global_proc("_animate", turf, { pixel_x = 0 }, 5)
+		player:set_var("plane", getPlane(-4, turf))
+		dm.global_proc("_animate", abstract_icon, { pixel_w = 0 }, 5)
 		SS13.wait(0.5)
+		turf:set_var("alpha", 255)
 		for item, lastInvis in itemsToUnset do
 			if not item:is_null() then
 				item:set_var("invisibility", lastInvis)
 			end
 		end
-		player:set_var("plane", getPlane(-7, turf))
+		abstract_icon:call_proc("moveToNullspace")
 		player:set_var("layer", 4)
 		player:set_var("anchored", false)
-		player:set_var("notransform", nil)
+		dm.global_proc("_remove_trait", player, "block_transformations", "clown_antag")
 		player:set_var("density", true)
 		jumpIntoFloorboards:set_var("name", "Jump into the floorboards")
 		jumpIntoFloorboards:set_var("button_icon_state", "origami_on")
@@ -333,19 +344,23 @@ local function setupAntag(mind)
 				active = true
 				player:call_proc("Stun", 1)
 				player:set_var("anchored", true)
-				player:set_var("notransform", true)
+				dm.global_proc("_add_trait", player, "block_transformations", "clown_antag")
 				player:set_var("density", false)
 				if shouldPull then
 					pulled:call_proc("Knockdown", 10)
 					pulled:call_proc("forceMove", turf)
 					pulled:set_var("pixel_z", 16)
 					pulled:set_var("anchored", true)
-					pulled:set_var("notransform", true)
+					dm.global_proc("_add_trait", pulled, "block_transformations", "clown_antag")
 					pulled:set_var("density", false)
-					pulled:set_var("plane", getPlane(-5, turf))
+					pulled:set_var("plane", getPlane(-4, turf))
 				end
-				player:set_var("plane", getPlane(-5, turf))
-				dm.global_proc("_animate", turf, { pixel_x = 32 }, 5)
+				player:set_var("plane", getPlane(-4, turf))
+				abstract_icon:call_proc("forceMove", turf)
+				abstract_icon:set_var("appearance", dm.global_proc("getFlatIcon", turf))
+				abstract_icon:set_var("plane", turf:get_var("plane"))
+				turf:set_var("alpha", 1)
+				dm.global_proc("_animate", abstract_icon, { pixel_w = 32 }, 5)
 				SS13.wait(0.5)
 				local itemsToUnset = {}
 				for _, item in turf:get_var("contents") do
@@ -355,10 +370,10 @@ local function setupAntag(mind)
 					end
 				end
 				if not player:is_null() then
-					player:set_var("plane", getPlane(-10, turf))
+					player:set_var("plane", getPlane(-6, turf))
 					player:set_var("layer", 2)
 					if shouldPull and not pulled:is_null() then
-						pulled:set_var("plane", getPlane(-10, turf))
+						pulled:set_var("plane", getPlane(-6, turf))
 						pulled:set_var("layer", 1.9)
 						dm.global_proc("_animate", pulled, { pixel_z = 24 }, 3, 1, 1)
 						dm.global_proc("_animate", nil, { pixel_z = -14 }, 2, 1, 1)
@@ -367,7 +382,7 @@ local function setupAntag(mind)
 					dm.global_proc("_animate", nil, { pixel_z = -32 }, 2, 1, 1)
 				end
 				SS13.wait(0.5)
-				dm.global_proc("_animate", turf, { pixel_x = 0 }, 5)
+				dm.global_proc("_animate", abstract_icon, { pixel_w = 0 }, 5)
 				if not player:is_null() and player:get_var("stat") == 0 then
 					jaunter = SS13.new("/obj/effect/dummy/phased_mob", player:call_proc("drop_location"), player)
 					player:call_proc("add_traits", {
@@ -445,21 +460,24 @@ local function setupAntag(mind)
 					end
 				end
 				player:set_var("layer", 4)
-				player:set_var("plane", getPlane(-7, turf))
+				player:set_var("plane", getPlane(-6, turf))
 				player:set_var("pixel_z", 0)
 				player:set_var("anchored", false)
-				player:set_var("notransform", nil)
+				dm.global_proc("_remove_trait", player, "block_transformations", "clown_antag")
 				player:set_var("density", true)
 				if shouldPull and not pulled:is_null() then
 					pulled:set_var("layer", 4)
-					pulled:set_var("plane", getPlane(-7, turf))
+					pulled:set_var("plane", getPlane(-6, turf))
 					pulled:set_var("pixel_z", 0)
 					pulled:set_var("anchored", false)
-					pulled:set_var("notransform", nil)
+					dm.global_proc("_remove_trait", pulled, "block_transformations", "clown_antag")
 					pulled:set_var("density", true)
 					floorboardVictim = pulled
 				end
 				active = false
+				SS13.wait(0.5)
+				abstract_icon:call_proc("moveToNullspace")
+				turf:set_var("alpha", 255)
 			else
 				local turf = dm.global_proc("_get_step", jaunter, 0)
 				exitFloorboards(turf, false)
@@ -496,10 +514,10 @@ local function setupAntag(mind)
 							beartrapActivated[dm.global_proc("REF", beartrap)] = equipper
 							local activationTimeReduction = 200
 							if antagData.stats.Beartrap >= 1 then
-								activationTimeReduction += 100
+								activationTimeReduction = activationTimeReduction + 100
 							end
 							if antagData.stats.Beartrap >= 2 then
-								activationTimeReduction += 100
+								activationTimeReduction = activationTimeReduction + 100
 							end
 							beartrap:set_var("kill_countdown", beartrap:get_var("kill_countdown") - activationTimeReduction)
 						end
@@ -553,8 +571,8 @@ local function setupAntag(mind)
 		end
 	end
 	local function doLevelUp()
-		antagData.level += 1
-		antagData.unallocatedPoints += 1
+		antagData.level = antagData.level + 1
+		antagData.unallocatedPoints = antagData.unallocatedPoints + 1
 		notifyPlayer(mind:get_var("current"), "level up!")
 		updateVisualData()
 	end
@@ -610,13 +628,13 @@ local function setupAntag(mind)
 			if currentValue >= 5 then
 				notifyPlayer(mind:get_var("current"), "max ability level reached!")
 			else
-				antagData.stats[response] += 1
+				antagData.stats[response] = antagData.stats[response] + 1
 				notifyPlayer(mind:get_var("current"), antagData.stats_upgrade[response][antagData.stats[response]])
 				local func = antagData.stats_upgrade_function[response][antagData.stats[response]]
 				if func then
 					func()
 				end
-				antagData.unallocatedPoints -= 1
+				antagData.unallocatedPoints = antagData.unallocatedPoints - 1
 			end
 			updateVisualData()
 		end)
@@ -653,7 +671,7 @@ local function setupAntag(mind)
 				))
 			end
 		end)
-		SS13.register_signal(player, "human_early_unarmed_attack", function(_, target)
+		SS13.register_signal(player, "human_pre_attack_hand", function(_, target)
 			if SS13.istype(target, "/obj/machinery/door") and target:call_proc("allowed", player) == 0 and target:get_var("density") == 1 then
 				if target:get_var("locked") ~= 0 or target:get_var("welded") ~= 0 then
 					if antagData.stats.Traversing >= 2 and player:get_var("combat_mode") == 1 then
@@ -700,7 +718,7 @@ local function setupAntag(mind)
 			end
 			local damageBuff = 0
 			if antagData.stats.Knife >= 3 then
-				damageBuff += 5
+				damageBuff = 5
 			end
 			if SS13.istype(target_mob, "/mob/living/carbon/human") and target_mob:get_var("stat") ~= 4 then
 				if math.random(10) == 1 then
@@ -709,7 +727,7 @@ local function setupAntag(mind)
 				end
 				local floorboardCooldownReduction = 50
 				if antagData.stats.Traversing >= 3 then
-					floorboardCooldownReduction += 50
+					floorboardCooldownReduction = floorboardCooldownReduction + 50
 				end
 				jumpIntoFloorboards:set_var("next_use_time", jumpIntoFloorboards:get_var("next_use_time") - floorboardCooldownReduction)
 			end
@@ -717,10 +735,10 @@ local function setupAntag(mind)
 				SS13.set_timeout(0, function()
 					local newSpeed = player:get_var("next_move") - 2
 					if antagData.stats.Knife >= 4 then
-						newSpeed -= 2
+						newSpeed = newSpeed - 1
 					end
 					if antagData.stats.Knife >= 5 then
-						newSpeed -= 1
+						newSpeed = newSpeed - 1
 					end
 					player:set_var("next_move", newSpeed)
 				end)
@@ -782,7 +800,7 @@ local function createPlayer()
 	local markedDatum = user:get_var("holder"):get_var("marked_datum")
 	local showToGhosts = true
 	if SHOULD_ASK_GHOSTS then
-		local players = SS13.await(SS13.global_proc, "poll_ghost_candidates", "The mode is looking for volunteers to become Clown for Maintenance Clown")
+		local players = SS13.await(dm.global_vars:get_var("SSpolling"), "poll_ghost_candidates", "The mode is looking for volunteers to become Clown for Maintenance Clown")
 		if players.len == 0 then
 			dm.global_proc("message_admins", "Not enough players volunteered for the Maintenance Clown role.")
 			return
@@ -805,6 +823,9 @@ local function createPlayer()
 	local player = SS13.new("/mob/living/carbon/human", spawnPosition)
 	mind:call_proc("transfer_to", player, true)
 	sleep()
+	player:call_proc("add_traits", {
+		"dismember_immunity"
+	}, "clown_antag_inherent")
 	mind:call_proc("set_assigned_role", dm.global_vars:get_var("SSjob"):call_proc("GetJobType", dm.global_proc("_text2path", "/datum/job/clown")))
 	mind:set_var("special_role", "Maintenance Clown")
 	local antag = SS13.new("/datum/antagonist/custom")
@@ -831,6 +852,10 @@ local function createPlayer()
 	knife:set_var("name", "sharpened butcher's cleaver")
 	knife:set_var("force", 20)
 	player:call_proc("equip_to_slot_or_del", knife, 8192, true)
+	local shirt = player:get_var("w_uniform")
+	shirt:set_var("has_sensor", 0)
+	shirt:set_var("sensor_mode", 0)
+	player:call_proc("update_suit_sensors")
 	local shoes = player:get_var("shoes")
 	dm.global_proc("_add_trait", shoes, "nodrop", "clown_antag")
 	shoes:set_var("resistance_flags", 243)
@@ -850,7 +875,7 @@ local function createPlayer()
 	SS13.register_signal(shoes, "parent_preqdeleted", punishTheClown)
 	sleep()
 	local betterEyes = SS13.new("/obj/item/organ/internal/eyes/night_vision/goliath")
-	betterEyes:call_proc("Insert", player, false, false)
+	betterEyes:call_proc("Insert", player, false, 1)
 
 	local idCard = player:get_var("wear_id")
 	idCard:get_var("access"):add("maint_tunnels")

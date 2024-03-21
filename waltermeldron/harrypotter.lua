@@ -1,6 +1,6 @@
 SS13 = require("SS13")
 
-sleep()
+SS13.wait(1)
 
 local IS_LOCAL = false
 local SILENT = true
@@ -128,7 +128,7 @@ SPELLS = {
     },
     {
         spellName = "Charge",
-        manaCost = 30,
+        manaCost = 50,
         activationSound = "sound/magic/charge.ogg",
         activationRegex = "^I beseech thee, charge the apparatus within my hands[!\\.]*$",
         canActivate = function(self, humanData)
@@ -184,7 +184,6 @@ SPELLS = {
             local maxDistance = math.floor(humanData.mana / 10) + 1
             distanceNumber = math.min(maxDistance, distanceNumber, 5)
             local extraManaCost = math.max(distanceNumber - 1, 0) * 10
-            humanData.mana -= extraManaCost
             
             local target = humanData.human:call_proc("drop_location")
             for i = 1, distanceNumber do 
@@ -193,7 +192,8 @@ SPELLS = {
                     return
                 end
             end
-            
+
+            humanData.mana -= extraManaCost
             local result = dm.global_proc("do_teleport", humanData.human, target, nil, nil, nil, "sound/magic/blink.ogg", "sound/magic/blink.ogg", "magic")
             if result == 1 then
                 local sparks = SS13.new("/datum/effect_system/spark_spread/quantum")
@@ -240,7 +240,7 @@ SPELLS = {
     },
     {
         spellName = "Lesser Fireball",
-        manaCost = 10,
+        manaCost = 30,
         activationSound = 'sound/magic/fireball.ogg',
         activationRegex = "^I beseech thee, conjure a lesser fireball to kill my foes[!\\.]*$",
         canActivate = function(self, humanData)
@@ -264,7 +264,7 @@ SPELLS = {
     },
     {
         spellName = "Fireball",
-        manaCost = 30,
+        manaCost = 60,
         activationSound = 'sound/magic/fireball.ogg',
         activationRegex = "^I beseech thee, conjure a fireball to kill my foes[!\\.]*$",
         canActivate = function(self, humanData)
@@ -286,7 +286,7 @@ SPELLS = {
     },
     {
         spellName = "Greater Fireball",
-        manaCost = 60,
+        manaCost = 100,
         activationSound = nil,
         activationRegex = "^I beseech thee, conjure a greater fireball to kill my foes[!\\.]*$",
         canActivate = function(self, humanData)
@@ -311,7 +311,7 @@ SPELLS = {
     },
     {
         spellName = "Tactical Nuke Fireball",
-        manaCost = 60,
+        manaCost = 200,
         activationSound = nil,
         activationRegex = "^I beseech thee, conjure a god damn nuke to kill my foes[!\\.]*$",
         canActivate = function(self, humanData)
@@ -337,7 +337,7 @@ SPELLS = {
     },
     {
         spellName = "Lesser Heal",
-        manaCost = 30,
+        manaCost = 50,
         activationSound = nil,
         activationRegex = "^I beseech thee, lesser heal the soul standing in front of me[!\\.]*$",
         canActivate = function(self, humanData)
@@ -365,13 +365,13 @@ SPELLS = {
                 break
             end
             if not healed then
-                humanData.mana += 30
+                humanData.mana += self.manaCost
             end
         end,
     },
     {
         spellName = "Greater Heal",
-        manaCost = 100,
+        manaCost = 200,
         activationSound = nil,
         activationRegex = "^I beseech thee, greater heal the soul standing in front of me[!\\.]*$",
         canActivate = function(self, humanData)
@@ -399,13 +399,13 @@ SPELLS = {
                 break
             end
             if not healed then
-                humanData.mana += 100
+                humanData.mana += self.manaCost
             end
         end,
     },
     {
         spellName = "Lesser Timestop",
-        manaCost = 50,
+        manaCost = 100,
         activationSound = nil,
         activationRegex = "^I beseech thee, cast lesser timestop for those around me[!\\.]*$",
         canActivate = function(self, humanData)
@@ -419,7 +419,7 @@ SPELLS = {
     },
     {
         spellName = "Timestop",
-        manaCost = 80,
+        manaCost = 150,
         activationSound = nil,
         activationRegex = "^I beseech thee, cast timestop for those around me[!\\.]*$",
         canActivate = function(self, humanData)
@@ -432,7 +432,7 @@ SPELLS = {
     },
     {
         spellName = "Greater Timestop",
-        manaCost = 100,
+        manaCost = 200,
         activationSound = nil,
         activationRegex = "^I beseech thee, cast greater timestop for those around me[!\\.]*$",
         canActivate = function(self, humanData)
@@ -443,26 +443,150 @@ SPELLS = {
             SS13.new("/obj/effect/timestop/magic", humanData.human:call_proc("drop_location"), 3, 200, { humanData.human })
         end
     },
+    {
+        spellName = "Fear",
+        manaCost = 30,
+        activationSound = nil,
+        activationRegex = "^I beseech thee, cast fear on the one named ([%s%w-'\"]+) near me[!\\.]*$",
+        canActivate = function(self, humanData, name)
+            return hasWand(humanData)
+        end,
+        -- Arguments from the regex
+        spellFunction = function(self, humanData, name)
+            local foundPlayer = false
+            for _, player in dm.global_vars:get_var("GLOB"):get_var("alive_player_list") do
+                if string.find(string.lower(player:get_var("name")), string.lower(name)) ~= nil and dm.global_proc("_get_dist", player, humanData.human) <= 7 then
+                    local phobia = SS13.new_untracked("/datum/brain_trauma/mild/phobia")
+                    player:call_proc("gain_trauma", phobia, 1)
+                    phobia:call_proc("freak_out", humanData.human)
+                    player:call_proc("cure_trauma_type", SS13.type("/datum/brain_trauma/mild/phobia"), 1)
+                    foundPlayer = true
+                    break
+                end
+            end
+            if not foundPlayer then
+                humanData.mana += self.manaCost
+            end
+        end
+    },
+    {
+        spellName = "Mass Hallucination",
+        manaCost = 60,
+        activationSound = nil,
+        activationRegex = "^I beseech thee, conjure up illusions on the ones around me[!\\.]*$",
+        canActivate = function(self, humanData)
+            return hasWand(humanData)
+        end,
+        -- Arguments from the regex
+        spellFunction = function(self, humanData)
+            local hallucinations = {}
+            for i=1, 3 do
+                table.insert(hallucinations, dm.global_proc("get_random_valid_hallucination_subtype"))
+            end
+            local currentAmount = 0
+            for _, player in dm.global_vars:get_var("GLOB"):get_var("alive_player_list") do
+                if currentAmount > 7 then
+                    break
+                end
+                if humanData.human ~= player and dm.global_proc("_get_dist", player, humanData.human) <= 7 then
+                    for _, hallucination in hallucinations do
+                        player:call_proc("_cause_hallucination", { hallucination, "(lua) spell casted by "..humanData.human:get_var("real_name") })
+                    end
+                    currentAmount += 1
+                end
+            end
+        end
+    },
 }
+
+local createHref = function(target, args, content)
+	brackets = brackets == nil and true or false
+	return "<a href='?src="..dm.global_proc("REF", target)..";"..args.."'>"..content.."</a>"
+end
+
+local function labelDisplay(label_name, content)
+    return "<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>"..label_name..":</div><div>"..content.."</div></div>"
+end
+
+local function openMobSettings(user, humanData)
+	local userCkey = user:get_var("ckey")
+	local browser = SS13.new_untracked("/datum/browser", user, "Modifying "..humanData.human:get_var("real_name").." Stats", "Modifying "..humanData.human:get_var("real_name").." Stats", 300, 200)
+	local data = ""
+    data = data.."<h1>"..humanData.human:get_var("real_name").." Stats</h1></hr>"
+	data = data..labelDisplay("Max Mana", createHref(humanData.human:get_var("dna"), "max_mana=1", tostring(humanData.maxMana)))
+	data = data..labelDisplay("Mana Regen Rate", createHref(humanData.human:get_var("dna"), "mana_regen_rate=1", tostring(humanData.manaRegenRate)))
+	browser:call_proc("set_content", data)
+	browser:call_proc("open")
+end
 
 local function setupSpells(human)
     local humanData = {
         human = human,
-        mana = 100,
-        maxMana = 100,
+        mana = 5000,
+        maxMana = math.random(50, 500),
         -- Mana regen per second
-        manaRegenRate = 1,
+        manaRegenRate = math.floor((math.random() * 3 + 0.5) * 100) / 100,
         -- Mana exhaustion multiplier effect
         manaExhaustionMult = 0.99,
         spells = {}
     }
     local function updateStamDamage()
+        humanData.mana = math.min(humanData.mana, humanData.maxMana)
         human:call_proc("setCloneLoss", (100 - (100 * (humanData.mana / humanData.maxMana))) * humanData.manaExhaustionMult)
     end
     SS13.unregister_signal(human, "living_life")
     SS13.unregister_signal(human, "mob_say")
 	SS13.unregister_signal(human, "ctrl_click")
     SS13.unregister_signal(human, "atom_attackby")
+    SS13.unregister_signal(human, "atom_examine")
+    SS13.unregister_signal(human:get_var("dna"), "handle_topic")
+	SS13.register_signal(human, "atom_examine", function(_, examining_mob, examine_list)
+		if SS13.istype(examining_mob, "/mob/dead") or examining_mob:get_var("ckey") == admin then
+			examine_list:add("<hr/><span class='notice'>Mana: "..humanData.mana.."</span>")
+			examine_list:add("<span class='notice'>Max Mana: "..humanData.maxMana.."</span>")
+			examine_list:add("<span class='notice'>Mana Regeneration Rate: "..humanData.manaRegenRate.."</span>")
+            if examining_mob:get_var("ckey") == admin then
+                local settingsData = createHref(human:get_var("dna"), "settings=1", "Modify Stats")
+			    examine_list:add("<span class='notice'>"..settingsData.."</span>")
+            end
+			examine_list:add("<hr/>")
+		end
+	end)
+    local isOpen = false
+    SS13.register_signal(human:get_var("dna"), "handle_topic", function(_, user, href_list)
+        if user:get_var("ckey") ~= admin then
+            return
+        end
+
+        if href_list:get("settings") then
+            openMobSettings(user, humanData)
+        end
+        
+        if isOpen then
+            return
+        end
+
+        if href_list:get("max_mana") then
+            isOpen = true
+			local newMaxMana = SS13.await(SS13.global_proc, "tgui_input_number", user, "Please input new max mana", "New max mana", humanData.maxMana, 500000, 1)
+			isOpen = false
+			if newMaxMana == nil then
+				return
+			end
+            humanData.mana = newMaxMana
+			humanData.maxMana = newMaxMana
+			openMobSettings(user, humanData)
+        elseif href_list:get("mana_regen_rate") then
+            isOpen = true
+			local newRegenRate = SS13.await(SS13.global_proc, "tgui_input_number", user, "Please input new mana regen rate", "TV audio volume", humanData.manaRegenRate, 50000, 0)
+			isOpen = false
+			if newRegenRate == nil then
+				return
+			end
+			humanData.manaRegenRate = newRegenRate
+			openMobSettings(user, humanData)
+        end
+    end)
     SS13.register_signal(human, "mob_say", function(_, speech_args)
         local message = speech_args:get(1)
         local returnValue = {}
@@ -506,6 +630,7 @@ local function setupSpells(human)
             local usedAmount = math.min(amount, maxUsableAmount)
             if item:call_proc("use", usedAmount) == 1 then
                 humanData.mana += usedAmount
+                humanData.maxMana += math.floor(usedAmount / 10)
                 updateStamDamage()
                 attacker:call_proc("visible_message", "<span class='notice'>The bluespace crystals gently shatter in "..attacker:get_var("name").."'s hands and a blue hue envelopes "..human:get_var("name").."</span>")
             end

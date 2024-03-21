@@ -3,7 +3,7 @@ SS13 = require("SS13")
 local user = dm.global_vars:get_var("GLOB"):get_var("directory"):get("waltermeldron")
 
 local spawnLocation = user:get_var("mob"):get_var("loc")
-local gorilla = SS13.new("/mob/living/simple_animal/hostile/gorilla", spawnLocation)
+local gorilla = SS13.new("/mob/living/basic/gorilla", spawnLocation)
 
 gorilla:call_proc("toggle_ai", 3)
 gorilla:set_var("can_have_ai", false)

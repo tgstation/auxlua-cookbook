@@ -9,15 +9,15 @@ local RAM_POWER_ALL = 5
 -- Change this to your ckey so that this works. Don't run it with my ckey please :)
 local admin = "waltermeldron"
 -- If set to false, ignores the width and height and searches for an industrial_lift on the user's current turf
-local fromScratch = false
+local fromScratch = true
 -- X radius width of the vehicle
-local width = 1
+local width = 2
 -- Y radius width of the vehicle
-local height = 1
+local height = 2
 -- Tiles per second at which the vehicle can move at
 local speed = 10
 -- The level at which this vehicle can ram objects
-local ramPower = RAM_POWER_ALL
+local ramPower = RAM_POWER_NONE
 -- The level at which this vehicle can ram objects when emagged
 local emaggedRamPower = ramPower + 1
 -- Whether to increase the destructive level of the vehicle
@@ -60,8 +60,8 @@ if fromScratch then
 
 	local turfs = dm.global_proc("_block", bottomLeft, topRight)
 
-	tramPiece = SS13.new("/obj/structure/industrial_lift", bottomLeft)
-	local mainTramMaster = tramPiece:get_var("lift_master_datum")
+	tramPiece = SS13.new("/obj/structure/transport/linear", bottomLeft)
+	local mainTramMaster = tramPiece:get_var("transport_controller_datum")
 	local fillerPieces = {}
 	for _, turf in turfs do
 		if over_exec_usage(0.7) then
@@ -71,21 +71,23 @@ if fromScratch then
 		if turf == bottomLeft then
 			fillerPiece = tramPiece
 		else
-			fillerPiece = SS13.new("/obj/structure/industrial_lift", turf)
+			fillerPiece = SS13.new("/obj/structure/transport/linear", nil)
+			fillerPiece:call_proc("forceMove", turf)
 		end
 		fillerPiece:set_var("canSmoothWith", {})
 		fillerPiece:set_var("smoothing_groups", {})
 		fillerPiece:set_var("smoothing_flags", 0)
 		fillerPiece:set_var("icon", icon)
+		fillerPiece:set_var("transport_id", "custom")
 		fillerPiece:set_var("icon_state", icon_state)
 		if turf ~= bottomLeft then
-			SS13.qdel(fillerPiece:get_var("lift_master_datum"))
+			SS13.qdel(fillerPiece:get_var("transport_controller_datum"))
 			table.insert(fillerPieces, fillerPiece)
 		end
 	end
 
 	if width == 1 and height == 1 and createWindow then
-		local window = SS13.new("/obj/structure/window/reinforced/tram/front", bottomLeft)
+		local window = SS13.new("/obj/structure/tram", bottomLeft)
 		SS13.register_signal(window, "parent_qdeleting", function()
 			if SS13.is_valid(mainTramMaster) then
 				SS13.qdel(mainTramMaster)
@@ -124,15 +126,14 @@ if fromScratch then
 			ramPower = emaggedRamPower
 			mainTramMaster:set_var("ignored_smashthroughs", dm.global_proc("typecacheof", getPassThroughs()))
 		end)
-		
 	end
-	tramPiece:set_var("lift_master_datum", mainTramMaster)
+	tramPiece:set_var("transport_controller_datum", mainTramMaster)
 	for _, fillerPiece in fillerPieces do
-		mainTramMaster:call_proc("add_lift_platforms", fillerPiece)
+		mainTramMaster:call_proc("add_transport_modules", fillerPiece)
 	end
 else
 	for _, object in spawnLocation:get_var("contents") do
-		if SS13.istype(object, "/obj/structure/industrial_lift") then
+		if SS13.istype(object, "/obj/structure/transport/linear") then
 			tramPiece = object
 			break
 		end
@@ -143,10 +144,11 @@ else
 		return
 	end
 end
-local mainTramMaster = tramPiece:get_var("lift_master_datum")
-mainTramMaster:set_var("create_multitile_platform", true)
+local mainTramMaster = tramPiece:get_var("transport_controller_datum")
+mainTramMaster:call_proc("link_transport_modules", tramPiece)
+mainTramMaster:set_var("create_modular_set", true)
 mainTramMaster:call_proc("order_platforms_by_z_level")
-local mainPlatform = mainTramMaster:get_var("lift_platforms"):get(1)
+local mainPlatform = mainTramMaster:get_var("transport_modules"):get(1)
 mainPlatform:set_var("radial_travel", false)
 sleep()
 mainTramMaster:set_var("ignored_smashthroughs", dm.global_proc("typecacheof", getPassThroughs()))
@@ -197,7 +199,7 @@ local function isTurfBlocked(turf, direction, user)
 							object:call_proc("bumpopen", user)
 						end)
 					end
-					if (bit32.band(object:get_var("flags_1"), 8) == 0 or object:get_var("dir") == reverseDirections[direction]) and tryMove ~= 1 then
+					if (bit32.band(object:get_var("flags_1"), 2) == 0 or object:get_var("dir") == reverseDirections[direction]) and tryMove ~= 1 then
 						return true
 					end
 				end
@@ -212,7 +214,7 @@ local function isTurfBlocked(turf, direction, user)
 		for _, object in turfBefore:get_var("contents") do
 			if object:get_var("density") == 1 and object:get_var("anchored") == 1 then
 				if (bit32.band(object:get_var("flags_1"), 8) == 0 or object:get_var("dir") == direction) then
-					if dm.global_proc("_list_find", mainPlatform:get_var("lift_load"), object) == 0 then
+					if dm.global_proc("_list_find", mainPlatform:get_var("transport_contents"), object) == 0 then
 						return true
 					end
 				end
@@ -277,7 +279,7 @@ SS13.register_signal(vehicleChair, "atom_relaymove", function(_, user, direction
 		return 1
 	end
 	moveCooldown = currentTime + (1 / speed) * 10
-	mainTramMaster:call_proc("move_lift_horizontally", direction)
+	mainTramMaster:call_proc("move_transport_horizontally", direction)
 	return 1
 end)
 

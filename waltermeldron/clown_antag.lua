@@ -27,7 +27,7 @@ function getPlane(new_plane, z_reference)
 		if plane_offset_blacklist == nil or plane_offset_blacklist:get(tostring(new_plane)) then
 			return new_plane
 		else
-			return new_plane - 210 * turfPlaneOffsets
+			return new_plane - 100 * turfPlaneOffsets
 		end
 	else
 		return new_plane
@@ -89,11 +89,11 @@ local function setupAntag(mind)
 				[5] = "pull people into the floorboards"
 			},
 			Body = {
-				[1] = "+5% damage reduction, virus and rad immunity",
-				[2] = "+5% damage reduction, immune to flash",
-				[3] = "+5% damage reduction, thermal vision",
-				[4] = "+5% damage reduction, space immunity",
-				[5] = "+5% damage reduction, x-ray vision"
+				[1] = "+10% damage reduction, virus and rad immunity",
+				[2] = "+10% damage reduction, immune to flash",
+				[3] = "+10% damage reduction, thermal vision",
+				[4] = "+10% damage reduction, space immunity",
+				[5] = "+10% damage reduction, x-ray vision"
 			}
 		},
 		stats_description = {
@@ -109,7 +109,7 @@ local function setupAntag(mind)
 				[1] = function()
 					local shoes = mind:get_var("current"):get_var("shoes")
 					if shoes then
-						shoes:set_var("slowdown", 0.5)
+						shoes:set_var("slowdown", 0.25)
 						mind:get_var("current"):call_proc("update_equipment_speed_mods")
 					end
 				end,
@@ -122,7 +122,7 @@ local function setupAntag(mind)
 				[4] = function()
 					local shoes = mind:get_var("current"):get_var("shoes")
 					if shoes then
-						shoes:set_var("slowdown", 0.25)
+						shoes:set_var("slowdown", 0)
 						mind:get_var("current"):call_proc("update_equipment_speed_mods")
 					end
 				end
@@ -130,7 +130,7 @@ local function setupAntag(mind)
 			Body = {
 				[1] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 5)
+					reducePhysDamage(player, 10)
 					player:call_proc("add_traits", {
 						"virus_immunity",
 						"rad_immunity"
@@ -138,19 +138,19 @@ local function setupAntag(mind)
 				end,
 				[2] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 5)
+					reducePhysDamage(player, 10)
 					dm.global_proc("_add_trait", player, "noflash", "clown_antag")
 					player:call_proc("update_sight")
 				end,
 				[3] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 5)
+					reducePhysDamage(player, 10)
 					dm.global_proc("_add_trait", player, "thermal_vision", "clown_antag")
 					player:call_proc("update_sight")
 				end,
 				[4] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 5)
+					reducePhysDamage(player, 10)
 					player:call_proc("add_traits", {
 						"resist_low_pressure",
 						"resist_high_pressure",
@@ -160,7 +160,7 @@ local function setupAntag(mind)
 				end,
 				[5] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 5)
+					reducePhysDamage(player, 10)
 					dm.global_proc("_add_trait", player, "xray_vision", "clown_antag")
 					player:call_proc("update_sight")
 				end,
@@ -602,7 +602,7 @@ local function setupAntag(mind)
 		end
 	end)
 	local isOpen = false
-	SS13.register_signal(antagData.button, "atom_click", function(_, _, _ , _, clickingUser)
+	SS13.register_signal(antagData.button, "screen_element_click", function(_, _, _ , _, clickingUser)
 		if isOpen or antagData.unallocatedPoints <= 0 or clickingUser ~= mind:get_var("current") then
 			return
 		end
@@ -639,7 +639,7 @@ local function setupAntag(mind)
 			updateVisualData()
 		end)
 	end)
-	SS13.register_signal(antagData.showInfo, "atom_click", function(_, _, _ , _, clickingUser)
+	SS13.register_signal(antagData.showInfo, "screen_element_click", function(_, _, _ , _, clickingUser)
 		local browser = SS13.new("/datum/browser", clickingUser, "Maintenance Clown Help", "Maintenance Clown Help", 600, 700)
 		local data = "<h2>Maintenance Clown Infodex</h2>"
 		data = data .. "As the maintenance clown, your goal is to embrace and cause anarchy. To gain levels, so that you can upgrade your abilities, you must kill people using your reverse beartraps."
@@ -672,8 +672,9 @@ local function setupAntag(mind)
 			end
 		end)
 		SS13.register_signal(player, "human_pre_attack_hand", function(_, target)
-			if SS13.istype(target, "/obj/machinery/door") and target:call_proc("allowed", player) == 0 and target:get_var("density") == 1 then
-				if target:get_var("locked") ~= 0 or target:get_var("welded") ~= 0 then
+			local locked = SS13.istype(target, "/obj/machinery/door") and (target:get_var("locked") ~= 0 or target:get_var("welded") ~= 0)
+			if SS13.istype(target, "/obj/machinery/door") and (target:call_proc("allowed", player) == 0 or locked) and target:get_var("density") == 1 then
+				if locked then
 					if antagData.stats.Traversing >= 2 and player:get_var("combat_mode") == 1 then
 						player:call_proc("do_attack_animation", target, "smash")
 						player:call_proc("Stun", 10)
@@ -735,10 +736,10 @@ local function setupAntag(mind)
 				SS13.set_timeout(0, function()
 					local newSpeed = player:get_var("next_move") - 2
 					if antagData.stats.Knife >= 4 then
-						newSpeed = newSpeed - 1
+						newSpeed = newSpeed - 2
 					end
 					if antagData.stats.Knife >= 5 then
-						newSpeed = newSpeed - 1
+						newSpeed = newSpeed - 2
 					end
 					player:set_var("next_move", newSpeed)
 				end)
@@ -800,7 +801,7 @@ local function createPlayer()
 	local markedDatum = user:get_var("holder"):get_var("marked_datum")
 	local showToGhosts = true
 	if SHOULD_ASK_GHOSTS then
-		local players = SS13.await(dm.global_vars:get_var("SSpolling"), "poll_ghost_candidates", "The mode is looking for volunteers to become Clown for Maintenance Clown")
+		local players = SS13.await(dm.global_vars:get_var("SSpolling"), "poll_ghost_candidates", "The mode is looking for volunteers to become Clown for Maintenance Clown", nil, nil, 300, nil, true, spawnPosition, spawnPosition, "Maintenance Clown")
 		if players.len == 0 then
 			dm.global_proc("message_admins", "Not enough players volunteered for the Maintenance Clown role.")
 			return

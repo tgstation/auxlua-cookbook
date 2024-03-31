@@ -11,9 +11,9 @@ local admin = "waltermeldron"
 -- If set to false, ignores the width and height and searches for an industrial_lift on the user's current turf
 local fromScratch = true
 -- X radius width of the vehicle
-local width = 2
+local width = 1
 -- Y radius width of the vehicle
-local height = 2
+local height = 1
 -- Tiles per second at which the vehicle can move at
 local speed = 10
 -- The level at which this vehicle can ram objects

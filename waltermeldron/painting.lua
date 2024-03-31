@@ -161,7 +161,7 @@ function setupPlayer(player)
 		player:call_proc("update_appearance")
 	end
 	local isOpen = false
-	SS13.register_signal(selectPainting, "atom_click", function(_, _, _ , params, clickingUser)
+	SS13.register_signal(selectPainting, "screen_element_click", function(_, _, _ , params, clickingUser)
 		if isOpen or (clickingUser ~= player and clickingUser ~= user:get_var("mob")) then
 			return
 		end
@@ -186,7 +186,7 @@ function setupPlayer(player)
 		end)
 	end)
 	local isOpen = false
-	SS13.register_signal(selectFrame, "atom_click", function(_, _, _ , _, clickingUser)
+	SS13.register_signal(selectFrame, "screen_element_click", function(_, _, _ , _, clickingUser)
 		if isOpen or (clickingUser ~= player and clickingUser ~= user:get_var("mob")) then
 			return
 		end
@@ -207,7 +207,7 @@ function setupPlayer(player)
 		end)
 	end)
 	local isOpen = false
-	SS13.register_signal(selectSize, "atom_click", function(_, _, _ , _, clickingUser)
+	SS13.register_signal(selectSize, "screen_element_click", function(_, _, _ , _, clickingUser)
 		if isOpen or (clickingUser ~= player and clickingUser ~= user:get_var("mob")) then
 			return
 		end

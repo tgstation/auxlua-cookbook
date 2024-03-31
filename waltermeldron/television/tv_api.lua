@@ -6,7 +6,7 @@ local trustedAdmins = {
 	[admin] = true,
 }
 -- The auth token. You'll need to update this every time you run the script because the python script generates a new one each time it runs for security purposes.
-authToken = "okaKrDMWPyQetLhglqXKT"
+authToken = "agnTwYCgbVGLvEJBiUgTg"
 -- Whether users can submit requests or not.
 local acceptingRequests = true
 -- Whether it's one request per user until their video is played
@@ -19,6 +19,8 @@ local channel = 1023
 local autoAccept = true
 -- Number of people required to vote skip
 local voteSkipRequired = 5
+-- Whether the 'admin' should be able to bypass video length limit
+local bypassVidLength = true
 -- Whether the TV range is infinite or not. Keep it off if you don't want people nowhere near the TV to lag when videos load.
 -- Useful if you plan on curating or limiting the videos that will be played so that no matter
 local infiniteRange = false
@@ -269,6 +271,7 @@ local function startTvLoop(players)
 		if #channels > 0 then
 			behindSign:set_var("icon_state", "loading")
 			currentChannel = channels[1].channel
+			blockPlayerRequest[channels[1].submitter] = nil
 			sign:set_var("icon", currentChannel.icon_file)
 			currentChannel.sound_file:set_var("status", 0)
 			local tvZLoc = tv:call_proc("drop_location"):get_var("z")
@@ -284,6 +287,10 @@ local function startTvLoop(players)
 				local playerClient = player:get_var("client")
 				if player:is_null() or not playerClient or not playerLocation or playerLocation:is_null() then
 					continue
+				end
+				local playerSettings = getPlayerSettings(player:get_var("ckey"))
+				if playerSettings.disableTv then 
+					continue 
 				end
 				if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) then
 					player:call_proc("playsound_local", nil, currentChannel.sound_file, 0, false, nil, 6, channel, true, currentChannel.sound_file, 17, 1, 1, true)
@@ -318,8 +325,6 @@ playClip = function()
 			voteSkip = 0,
 			voteSkipVoters = {}
 		}
-		print(playingChannel.submitter)
-		blockPlayerRequest[playingChannel.submitter] = false
 		queuedUrls[playingChannel.url] = false
 		animationEnd = dm.world:get_var("timeofday") + playingChannel.duration
 		playingChannel.sound_file:set_var("status", 0)
@@ -429,10 +434,10 @@ if authToken ~= "" then
 		if channelCache[url] then
 			table.remove(queuedRequests, 1)
 			local channel = channelCache[url]
-			channel.submitter = ckey
 			table.insert(channels, { channel = channel, submitter = ckey, startPos = startPos })
 			if #channels == 1 then
 				currentChannel = channels[1].channel
+				blockPlayerRequest[channels[1].submitter] = nil
 				sign:set_var("icon", currentChannel.icon_file)
 				playClip()
 			end
@@ -446,7 +451,7 @@ if authToken ~= "" then
 		channel.url = url
 		queryInProgress = true
 		local vidLength = scaleConfig.maxVidLength
-		if ckey == admin then
+		if ckey == admin and bypassVidLength then
 			-- Load in however long you want it to be, but this is just here so that you don't crash people's clients with 1 hr long videos
 			vidLength = 1200
 		end
@@ -552,7 +557,6 @@ if authToken ~= "" then
 		channel.sound_file = SS13.new("/sound", file_name)
 		channel.duration = tonumber(response:get_var("headers"):get("audio-length")) * 10
 		SS13.stop_tracking(request)
-		channel.submitter = ckey
 		table.insert(channels, { channel = channel, submitter = ckey, startPos = startPos })
 		table.remove(queuedRequests, 1)
 		channelCache[url] = channel
@@ -565,6 +569,7 @@ if authToken ~= "" then
 		end
 		if #channels == 1 then
 			currentChannel = channels[1].channel
+			blockPlayerRequest[channels[1].submitter] = nil
 			sign:set_var("icon", currentChannel.icon_file)
 			currentChannel.sound_file:set_var("status", 0)
 			local tvZLoc = tv:call_proc("drop_location"):get_var("z")
@@ -578,6 +583,8 @@ if authToken ~= "" then
 					continue
 				end
 				if (player:call_proc("drop_location"):get_var("z") == tvZLoc or infiniteRange) then
+					local playerSettings = getPlayerSettings(player:get_var("ckey"))
+					if playerSettings.disableTv then continue end
 					player:call_proc("playsound_local", nil, currentChannel.sound_file, 0, false, nil, 6, channel, true, currentChannel.sound_file, 17, 1, 1, true)
 					local client = player:get_var("client")
 					dm.global_proc("_list_add", client:get_var("images"), sign)
@@ -608,6 +615,7 @@ local requestCounter = 0
 local canMakeRequest = function(user, isAdmin)
 	if onePerUser and not isAdmin then
 		if blockPlayerRequest[user:get_var("ckey")] then
+			user:call_proc("balloon_alert", user, "only 1 request at a time!")
 			return false
 		end
 	end
@@ -631,7 +639,7 @@ local makeRequest = function(user, isAdmin)
 			return
 		end
 		local vidLength = scaleConfig.maxVidLength
-		if isAdmin then
+		if isAdmin and bypassVidLength then
 			-- Load in however long you want it to be, but this is just here so that you don't crash people's clients with 1 hr long videos
 			vidLength = 1200
 		end
@@ -886,6 +894,15 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 					if channels[i].channel.url == toSkip then
 						foundOne = true
 						table.remove(channels, i)
+					else
+						i += 1
+					end
+				end
+				i = 1
+				while i <= #queuedRequests do
+					if queuedRequests[i].url == toSkip then
+						foundOne = true
+						table.remove(queuedRequests, i)
 					else
 						i += 1
 					end

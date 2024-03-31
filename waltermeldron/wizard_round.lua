@@ -108,7 +108,7 @@ local function makeWizard(oldmob, job)
             local playerData = players[ckey]
             dm.global_proc("to_chat", mob, "<span class='big bold hypnophrase'>" .. rules .. "</span>")
             dm.global_proc("_add_trait", mob, "pacifism", "admin_voodoo")
-            SS13.register_signal(readyUpButton, "atom_click", function(_, _, _ , _, clickingUser)
+            SS13.register_signal(readyUpButton, "screen_element_click", function(_, _, _ , _, clickingUser)
                 if clickingUser ~= mind:get_var("current") then
                     return
                 end
@@ -240,7 +240,7 @@ function setupDeadPlayer(newMob)
     allHuds[image] = true
     hud:call_proc("show_hud", hud:get_var("hud_version"))
     updateLeaderboard(image)
-    SS13.register_signal(respawnButton, "atom_click", function(_, _, _ , _, clickingUser)
+    SS13.register_signal(respawnButton, "screen_element_click", function(_, _, _ , _, clickingUser)
         if clickingUser ~= newMob then
             return
         end

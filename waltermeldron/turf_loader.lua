@@ -4,7 +4,7 @@ SS13 = require("SS13")
 -- TGMC frost walls: https://cdn.discordapp.com/attachments/1129765480295583786/1137134773077282876/frostwall.dmi frostwall
 -- TGMC reinforced walls: https://cdn.discordapp.com/attachments/1129765480295583786/1137135418157060146/rwall.dmi rwall
 
-local TURF_URL_TO_LOAD = "https://cdn.discordapp.com/attachments/1129765480295583786/1137051226962399282/cave.dmi"
+local TURF_URL_TO_LOAD = "https://cdn.discordapp.com/attachments/1129765480295583786/1137051226962399282/cave.dmi?ex=6606e479&is=65f46f79&hm=5000dbca5fd3d49b9b79d78739a11dcbdeda8b785018724395994a99f1719c76&"
 local TURF_TYPE = "/turf/closed/indestructible/riveted"
 local TURF_NAME = "cave wall"
 local TURF_COLOR = nil
@@ -54,7 +54,7 @@ SS13.wait(1)
 
 for x = 1, maxX do
     for y = 1, maxY do
-        if over_exec_usage(0.7) then
+        if over_exec_usage(0.5) then
             sleep()
         end
         local turf = dm.global_proc("_locate", x, y, z)

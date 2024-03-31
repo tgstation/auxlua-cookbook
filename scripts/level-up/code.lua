@@ -210,7 +210,7 @@ local function setupHuman(name, human, color)
 	updateVisualData(humanData)
 
 	local isOpen = false
-	SS13.register_signal(humanData.button, "atom_click", function()
+	SS13.register_signal(humanData.button, "screen_element_click", function()
 		if isOpen or humanData.unallocatedPoints <= 0 then
 			return
 		end
@@ -253,7 +253,7 @@ local function handleLevelUp(data)
 			data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true)
 		end
 	elseif data.level % 5 == 0 then
-		local item = SS13.new("/obj/item/a_gift/anything", dm.global_proc("_get_step", data.human, 0))
+		local item = SS13.new("/obj/item/gift/anything", dm.global_proc("_get_step", data.human, 0))
 		if not data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true) then
 			data.human:call_proc("equip_to_slot_if_possible", item, 8192, false, true)
 		end

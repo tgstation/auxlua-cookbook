@@ -16,10 +16,10 @@ yeti:call_proc("init_mind")
 local cool_rate_per_second = 200
 local gas_fill_per_second = 300
 
-local max_gas = 500
+local max_gas = 100
 local spewing_gases = {
-    ["/datum/gas/freon"] = 10,
-    ["/datum/gas/oxygen"] = 1
+    ["/datum/gas/healium"] = 1,
+    ["/datum/gas/water_vapor"] = 10,
 }
 
 local gas_on = false

@@ -10,9 +10,9 @@ local MODE_GRIND = 2
 local MODE_CLICKER = 3
 local MODE_PRECISION = 4
 local MODE = MODE_RUNITE
-local NON_GRIND_SPEED_BOOST = 2
+local NON_GRIND_SPEED_BOOST = 1
 local TIER_CAP = 5
-local CRAFTABLE_TIER_CAP = 50
+local CRAFTABLE_TIER_CAP = 15
 local CRAFTABLE_QUALITY_REQ_MULT = 0
 local FANTASY_TIER_PER_QUALITY = 8
 local QUALITY_CAP
@@ -150,8 +150,7 @@ local function pairsByValue (t, f)
 	return iter
 end
 
-local anyItemInTheGame = SS13.new("/obj/item/a_gift/anything")
-anyItemInTheGame:call_proc("get_gift_type")
+local anyItemInTheGame = SS13.new("/obj/structure/mystery_box")
 sleep()
 
 local craftable = {
@@ -169,7 +168,8 @@ local craftable = {
 		materialsRequired = 20,
 		typepath = "/obj/item/melee",
 		blacklist = {
-			"/obj/item/melee/supermatter_sword"
+			"/obj/item/melee/supermatter_sword",
+			"/obj/item/melee/energy/axe"
 		},
 		materialUnits = 15,
 	},
@@ -229,7 +229,7 @@ for _, craftData in craftable do
 	end
 end
 
-for index, typepath in dm.global_vars:get_var("GLOB"):get_var("possible_gifts") do
+for index, typepath in anyItemInTheGame:get_var("valid_types") do
 	if over_exec_usage(0.7) then
 		sleep()
 	end
@@ -254,6 +254,8 @@ for index, typepath in dm.global_vars:get_var("GLOB"):get_var("possible_gifts") 
 		end
 	end
 end
+
+SS13.qdel(anyItemInTheGame)
 
 local specialRefining = {
 	["/obj/item/stack/sheet/plasteel"] = {
@@ -288,6 +290,12 @@ local specialRefining = {
 			return false
 		end
 	},
+	["/obj/item/stack/sheet/plastic"] = {
+		onRefineStart = function(humanData, data)
+			notifyPlayer(humanData.human, "too flimsy to work with!")
+			return false
+		end
+	},
 	["/obj/item/stack/sheet"] = {
 		onRefineStart = function(humanData, data)
 			local item = data.item
@@ -304,7 +312,7 @@ local specialRefining = {
 				table.insert(craftableNames, newName)
 				nameMapping[newName] = craftData
 			end
-			local response = SS13.await(SS13.global_proc, "tgui_input_list", human, "Select what to craft", "Crafting selection", craftableNames)
+			local response = SS13.await(SS13.global_proc, "tgui_input_list", humanData.human, "Select what to craft", "Crafting selection", craftableNames)
 			if response == nil or item:is_null() or humanData.human:is_null() then
 				return false
 			end
@@ -684,7 +692,8 @@ local function setupHuman(human)
 					diminishing = 0,
 					specialData = specialRefiningData,
 					completionImage = SS13.new("/image", nil, target),
-					qualityHardCap = QUALITY_CAP or 10000
+					qualityHardCap = QUALITY_CAP or 10000,
+					name = target:get_var("name")
 				}
 				if specialRefiningData.onRefineStart then
 					isOpen = true
@@ -796,35 +805,48 @@ local function setupHuman(human)
 			end
 			local visualColor = "#ffffff"
 			if not specialRefiningData.hitsRequiredToFinish then
-				local materials = {}
+				local materialsInfused = itemProgress.materialsInfused or {}
 				local pointValueTotal = 0
 				local location = target:get_var("loc")
 				for _, object in location:get_var("contents") do
 					if SS13.istype(object, "/obj/item/stack/sheet") and dm.global_proc("_has_trait", object, "being_refined") == 0 then
-						for mat, amount in object:get_var("mats_per_unit") do
-							if not materials[mat] then
-								materials[mat] = amount * 5
-							else
-								materials[mat] += amount * 5
+						local infusedMaterialAlready = false
+						local potentialMaterials = object:get_var("mats_per_unit")
+						local matCount = 0
+						local shouldConsume = false
+						local matNames = {}
+						for mat, amount in materialsInfused do
+							local value = potentialMaterials:get(mat)
+							if value then
+								materialsInfused[mat] += value * 5
+								shouldConsume = true
+							end
+							table.insert(matNames, mat:get_var("name"))
+							matCount += 1
+						end
+
+						if matCount < 2 then
+							for mat, amount in potentialMaterials do
+								if not materialsInfused[mat] then
+									materialsInfused[mat] = amount * 5
+									shouldConsume = true
+								end
 							end
 						end
-						pointValueTotal = object:get_var("point_value") * 3
-						object:call_proc("use", 1)
+						if shouldConsume then
+							pointValueTotal = object:get_var("point_value") * 3
+							object:call_proc("use", 1)
+						else
+							notifyPlayer(user, "already infusing "..table.concat(matNames, ", ").." into "..itemProgress.name.."!")
+						end
 						break
 					end
 				end
-				local custom_materials = target:get_var("custom_materials")
-				if custom_materials then
-					for mat, amount in custom_materials do
-						if not materials[mat] then
-							materials[mat] = amount
-						else
-							materials[mat] += amount
-						end
-					end
-				end
+				itemProgress.materialsInfused = materialsInfused
 				local pointValueLevelBoost = pointValueTotal / 20
-				-- target:call_proc("set_custom_materials", materials)
+
+				target:set_var("material_flags", 7)
+				target:call_proc("set_custom_materials", materialsInfused)
 				local levelModifier = humanData.level
 				if MODE == MODE_RUNITE or MODE == MODE_CLICKER then
 					levelModifier = math.max(determineQuality(itemProgress, true) + 2, 0) * 10 * NON_GRIND_SPEED_BOOST

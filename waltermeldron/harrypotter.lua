@@ -532,7 +532,8 @@ local function setupSpells(human)
     }
     local function updateStamDamage()
         humanData.mana = math.min(humanData.mana, humanData.maxMana)
-        human:call_proc("setCloneLoss", (100 - (100 * (humanData.mana / humanData.maxMana))) * humanData.manaExhaustionMult)
+        -- Clone loss was removed, rip
+        -- human:call_proc("setCloneLoss", (100 - (100 * (humanData.mana / humanData.maxMana))) * humanData.manaExhaustionMult)
     end
     SS13.unregister_signal(human, "living_life")
     SS13.unregister_signal(human, "mob_say")

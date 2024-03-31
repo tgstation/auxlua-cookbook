@@ -1,1 +1,2 @@
 Tank, Boomer sprites made by bigbaneforyou
+footstep1, footstep2, footstep3 - Sounds of Tank Left 4 Dead 2

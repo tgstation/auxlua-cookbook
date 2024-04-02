@@ -1,12 +1,22 @@
 SS13 = require("SS13")
 
-SS13.wait(1)
-
 local IS_LOCAL = true
-local SILENT = true
 local admin = "waltermeldron"
 local LOCAL_CLASS = "Tank"
 local ALLOW_ZOMBIE_CONTROLLABLE = false
+
+local tickLag = function(tickUsageStart, worldTime)
+	if dm.world:get_var("time") ~= worldTime then
+		print("We slept somewhere!")
+		return true
+	end
+	return (dm.world:get_var("tick_usage") - tickUsageStart) >= 50 or over_exec_usage(0.7)
+end
+if not IS_LOCAL then
+	SS13.await(SS13.global_proc, "__lua_set_execution_limit", 5000)
+end
+
+sleep()
 
 local BLOCK_ACTIVATION = 1
 
@@ -93,6 +103,18 @@ local tankFootstepSound = {
 	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/footstep1.ogg"),
 	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/footstep2.ogg"),
 	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/footstep3.ogg")
+}
+
+local tankDeathSound = {
+	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/death1.ogg"),
+	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/death2.ogg"),
+	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/death3.ogg")
+}
+
+local tankRoarSounds = {
+	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/roar1.ogg"),
+	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/roar2.ogg"),
+	loadSound("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/roar3.ogg")
 }
 
 local loadIcon = function(http)
@@ -239,12 +261,13 @@ local makeZombieController = function(location)
 		end
 	end)
 	local promotedTank
+	local cooldown = 900
 	grantAbility(controllerData, {
 		name = "Promote Tank",
 		icon = "https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/zombie.dmi",
 		icon_state = "tank",
 		abilityType = "targeted",
-		cooldown = 300,
+		cooldown = cooldown,
 		onActivate = function(humanData, action, target)
 			if SS13.is_valid(promotedTank) and promotedTank:get_var("stat") ~= 4 then
 				controller:call_proc("balloon_alert", controller, "promoted tank still alive!")
@@ -263,12 +286,18 @@ local makeZombieController = function(location)
 			setClass(mutation, "Tank")
 			SS13.set_timeout(0, function()
 				local players = SS13.await(dm.global_vars:get_var("SSpolling"), "poll_ghost_candidates", "The mode is looking for volunteers to become a Tank", nil, nil, 100, nil, true, target, target, "Tank")
+				if not SS13.is_valid(target) then
+					if SS13.is_valid(action) then
+						action:call_proc("StartCooldownSelf", 1)
+					end
+					return
+				end
 				if not players or players.len == 0 then
 					dm.global_proc("message_admins", "Not enough players volunteered for the Tank role.")
 					setClass(mutation, "Zombie (AI)")
-					return
-				end
-				if not SS13.is_valid(target) then
+					if SS13.is_valid(action) then
+						action:call_proc("StartCooldownSelf", 1)
+					end
 					return
 				end
 				local client = dm.global_proc("_pick_list", players)
@@ -276,6 +305,13 @@ local makeZombieController = function(location)
 				local zombieMind = SS13.new("/datum/mind", client:get_var("key"))
 				zombieMind:call_proc("transfer_to", target, true)
 				promotedTank = target
+				local deathCallback
+				deathCallback = SS13.register_signal(promotedTank, "living_death", function()
+					if SS13.is_valid(action) then
+						action:call_proc("StartCooldownSelf", cooldown * 10)
+					end
+					SS13.unregister_signal(promotedTank, "living_death", deathCallback)
+				end)
 			end)
 		end
 	})
@@ -305,6 +341,7 @@ local function makePlayersVulnerable(position)
 end
 
 local ZOMBIE_AI = {}
+CURRENT_ZOMBIE_AI_LIST = ZOMBIE_AI
 
 local startAiControllerLoop = function()
 	local currentRun = {}
@@ -333,10 +370,13 @@ local startAiControllerLoop = function()
 				end
 			end
 			resumed = true
+
 		end
 
+		local tickStart = dm.world:get_var("tick_usage")
+		local timeStart = dm.world:get_var("time")
 		while #currentRun > 0 do
-			if over_exec_usage(0.7) then
+			if tickLag(tickStart, timeStart) then
 				return
 			end
 			local zombie = table.remove(currentRun)
@@ -726,7 +766,7 @@ ABILITIES = {
 		icon = "https://raw.githubusercontent.com/tgstation/tgstation/master/icons/mob/actions/actions_cult.dmi",
 		icon_state = "carve",
 		abilityType = "targeted",
-		cooldown = 5,
+		cooldown = 15,
 		onActivate = function(humanData, action, target)
 			if hasTrait(humanData.human, "immobilized") then
 				return BLOCK_ACTIVATION
@@ -735,8 +775,31 @@ ABILITIES = {
 				SS13.qdel(humanData.meathook)
 				humanData.meathook = SS13.new("/obj/item/ammo_casing/magic/hook", humanData.human)
 				SS13.register_signal(humanData.meathook, "fire_casing", function(_, _, _, _, _, _, _, _, _, thrown_proj)
+					if not SS13.is_valid(thrown_proj) then
+						return
+					end
+					thrown_proj:set_var("icon_state", "lobster_claw")
+					local chain = thrown_proj:get_var("initial_chain")
+					chain:set_var("icon_state", "tentacle")
+					chain:get_var("visuals"):set_var("icon_state", "tentacle")
+					local uiBlockedCallback
+					uiBlockedCallback = SS13.register_signal(humanData.human, "addtrait uiblocked", function()
+						SS13.unregister_signal(humanData.human, "addtrait uiblocked", uiBlockedCallback)
+						for _, source in humanData.human:get_var("_status_traits"):get("uiblocked") do
+							local thing = dm.global_proc("_locate", source)
+							if not thing or not SS13.istype(thing, "/datum/hook_and_move") then
+								continue
+							end
+							local chain = thing:get_var("return_chain")
+							chain:set_var("icon_state", "tentacle")
+							chain:get_var("visuals"):set_var("icon_state", "tentacle")
+						end
+					end)
 					SS13.register_signal(thrown_proj, "projectile_self_on_hit", function(_, firer, target, Angle, hit_limb_zone, blocked)
-						SS13.set_timeout(0.1, function()
+						SS13.set_timeout(0, function()
+							if SS13.is_valid(humanData.human) then
+								SS13.unregister_signal(humanData.human, "addtrait uiblocked", uiBlockedCallback)
+							end
 							if not hasTrait(target, "hooked") then
 								return
 							end
@@ -750,7 +813,22 @@ ABILITIES = {
 					end)
 				end)
 				humanData.meathook:call_proc("fire_casing", target, humanData.human, nil, nil, nil, "chest", 0, humanData.human)
+
 				dm.global_proc("playsound", humanData.human, "sound/weapons/batonextend.ogg", 100)
+			end)
+		end
+	},
+	["tank_roar"] = {
+		name = "Roar",
+		icon = "https://raw.githubusercontent.com/tgstation/tgstation/master/icons/mob/actions/actions_items.dmi",
+		icon_state = "berserk_mode",
+		abilityType = "normal",
+		cooldown = 15,
+		onActivate = function(humanData, action, target)
+			local sound = tankRoarSounds[math.random(#tankRoarSounds)]
+			dm.global_proc("playsound", humanData.human, sound, 80, true, 15, 1.5, nil, 0, true, true, 8)
+			SS13.set_timeout(0, function()
+				humanData.human:call_proc("emote", "me", 1, "roars!", true)
 			end)
 		end
 	},
@@ -863,6 +941,26 @@ ABILITIES = {
 		end
 	},
 }
+
+local zombieMutIcons = {}
+local setIcon = function(humanData, icon)
+	local zombieIcon = zombieMutIcons[icon]
+	if not zombieIcon then
+		zombieIcon = SS13.new("/mutable_appearance")
+		zombieIcon:set_var("icon", loadIcon("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/zombie.dmi"))
+		zombieIcon:set_var("icon_state", icon)
+		zombieIcon:set_var("appearance_flags", 837)
+		zombieMutIcons[icon] = zombieIcon
+	end
+	humanData.human:set_var("alpha", 0)
+	humanData.human:call_proc("add_overlay", zombieIcon)
+	humanData.zombieIcon = zombieIcon
+end
+
+local resetIcon = function(humanData)
+	humanData.human:set_var("alpha", 255)
+	humanData.human:call_proc("cut_overlay", humanData.zombieIcon)
+end
 
 CLASSES = {
 	["Non-Zombie"] = {
@@ -977,13 +1075,7 @@ CLASSES = {
 		end,
 		onGain = function(self, humanData)
 			humanData.human:set_var("resistance_flags", 48)
-			local zombieBoomer = SS13.new("/mutable_appearance")
-			zombieBoomer:set_var("icon", loadIcon("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/zombie.dmi"))
-			zombieBoomer:set_var("icon_state", "boomer")
-			zombieBoomer:set_var("appearance_flags", 837)
-			humanData.human:set_var("alpha", 0)
-			humanData.human:call_proc("add_overlay", zombieBoomer)
-			humanData.zombieBoomer = zombieBoomer
+			setIcon(humanData, "boomer")
 			RegisterClassSignal(humanData, "living_death", function(human, gibbed)
 				SS13.set_timeout(0, function()
 					self:explode(humanData, gibbed, 0)
@@ -998,10 +1090,8 @@ CLASSES = {
 			end)
 		end,
 		onLoss = function(self, humanData)
-			humanData.human:set_var("transform", dm.global_proc("_matrix", 1, 0, 0, 0, 1, 0))
+			resetIcon(humanData)
 			humanData.human:set_var("resistance_flags", 0)
-			humanData.human:set_var("alpha", 255)
-			humanData.human:call_proc("cut_overlay", humanData.zombieBoomer)
 			SS13.stop_tracking(humanData.zombieBoomer)
 		end
 	},
@@ -1017,10 +1107,10 @@ CLASSES = {
 			"ventcrawler_always"
 		},
 		onGain = function(self, humanData)
-			humanData.human:set_var("transform", dm.global_proc("_matrix", 1, 0, 0, 0, 0.5, 0))
+			setIcon(humanData, "jockey")
 		end,
 		onLoss = function(self, humanData)
-			humanData.human:set_var("transform", dm.global_proc("_matrix", 1, 0, 0, 0, 1, 0))
+			resetIcon(humanData)
 		end
 	},
 	["Smoker"] = {
@@ -1031,16 +1121,16 @@ CLASSES = {
 		},
 		noRevive = true,
 		onGain = function(self, humanData)
-			humanData.human:set_var("transform", dm.global_proc("_matrix", 0.75, 0, 0, 0, 1.25, 0))
+			setIcon(humanData, "smoker")
 		end,
 		onLoss = function(self, humanData)
-			humanData.human:set_var("transform", dm.global_proc("_matrix", 1, 0, 0, 0, 1, 0))
+			resetIcon(humanData)
 		end
 	},
 	["Tank"] = {
-		slowdown = -0.25,
+		slowdown = 0,
 		damage = 30,
-		damageResist = 75,
+		damageResist = 50,
 		noRevive = true,
 		traits = {
 			"ignoredamageslowdown",
@@ -1061,12 +1151,9 @@ CLASSES = {
 			"tank_roar"
 		},
 		onGain = function(self, humanData)
-			local zombieTank = SS13.new("/mutable_appearance")
-			zombieTank:set_var("icon", loadIcon("https://raw.githubusercontent.com/tgstation/auxlua-cookbook/master/waltermeldron/assets/zombie/zombie.dmi"))
-			zombieTank:set_var("icon_state", "tank")
-			zombieTank:set_var("appearance_flags", 837)
-			humanData.human:set_var("alpha", 0)
-			humanData.human:call_proc("add_overlay", zombieTank)
+			setIcon(humanData, "tank")
+			local sound = tankRoarSounds[math.random(#tankRoarSounds)]
+			dm.global_proc("playsound", humanData.human, sound, 80, true, 15, 1.5, nil, 0, true, true, 8)
 			for _, item in humanData.human:get_var("held_items") do
 				if SS13.istype(item, "/obj/item/mutant_hand/zombie") then
 					RegisterClassSignal(humanData, item, "item_afterattack", function(_, target, user, proximity, click_params)
@@ -1111,18 +1198,16 @@ CLASSES = {
 				stepCount = 0
 			end)
 			RegisterClassSignal(humanData, "living_death", function()
-				dm.global_proc("playsound", humanData.human, tankDeathSound, 20, true, 15, 1.5, nil, 0, true, true, 8)
+				local sound = tankDeathSound[math.random(#tankDeathSound)]
+				dm.global_proc("playsound", humanData.human, sound, 40, true, 15, 1.5, nil, 0, true, true, 8)
 			end)
 			humanData.human:call_proc("_AddElement", { SS13.type("/datum/element/wall_tearer"), true, 80, 3 })
 			humanData.human:set_var("status_flags", 0)
-			humanData.zombieTank = zombieTank
 		end,
 		onLoss = function(self, humanData)
 			humanData.human:call_proc("_AddElement", { SS13.type("/datum/element/footstep"), "footstep_human", 1, -6 })
 			humanData.human:set_var("status_flags", 15)
-			humanData.human:set_var("alpha", 255)
-			humanData.human:call_proc("cut_overlay", humanData.zombieTank)
-			SS13.stop_tracking(humanData.zombieTank)
+			resetIcon(humanData)
 		end,
 	}
 }
@@ -1564,9 +1649,6 @@ local function setupZombieMutation(human)
 		end
 	end)
 
-	if not SILENT then
-		dm.global_proc("to_chat", human, "<span class='userdanger'>You feel eerie, something doesn't seem right..</span>")
-	end
 	return humanData
 end
 
@@ -1589,8 +1671,10 @@ else
 		end)
 	end)
 
+	local tickStart = dm.world:get_var("tick_usage")
+	local timeStart = dm.world:get_var("time")
 	for _, human in dm.global_vars:get_var("GLOB"):get_var("mob_list") do
-		if over_exec_usage(0.3) then
+		if tickLag(tickStart, timeStart) then
 			sleep()
 		end
 		if SS13.istype(human, "/mob/living/carbon/human") then

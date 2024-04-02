@@ -1,2 +1,2 @@
-Tank, Boomer sprites made by bigbaneforyou
-footstep1, footstep2, footstep3 - Sounds of Tank Left 4 Dead 2
+Tank, Boomer, Jockey and Smoker sprites made by bigbaneforyou
+footstep1, footstep2, footstep3, death1, death2, death3, roar1, roar2, roar3 - Sounds of Tank Left 4 Dead 2

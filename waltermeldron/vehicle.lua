@@ -9,19 +9,19 @@ local RAM_POWER_ALL = 5
 -- Change this to your ckey so that this works. Don't run it with my ckey please :)
 local admin = "waltermeldron"
 -- If set to false, ignores the width and height and searches for an industrial_lift on the user's current turf
-local fromScratch = true
+local fromScratch = false
 -- X radius width of the vehicle
 local width = 1
 -- Y radius width of the vehicle
 local height = 1
 -- Tiles per second at which the vehicle can move at
-local speed = 10
+local speed = 2
 -- The level at which this vehicle can ram objects
-local ramPower = RAM_POWER_NONE
+local ramPower = RAM_POWER_ALL
 -- The level at which this vehicle can ram objects when emagged
 local emaggedRamPower = ramPower + 1
 -- Whether to increase the destructive level of the vehicle
-local veryDestructive = false
+local veryDestructive = true
 local createWindow = true
 
 local function getPassThroughs()

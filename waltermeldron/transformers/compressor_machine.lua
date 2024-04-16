@@ -33,11 +33,11 @@ local loadIcon = function(http)
 end
 
 local spaghettiMachine = SS13.new("/obj/machinery", user:get_var("loc"))
-spaghettiMachine:set_var("name", "spaghetti machine")
+spaghettiMachine:set_var("name", "compressor")
 spaghettiMachine:set_var("icon", loadIcon("https://raw.githubusercontent.com/tgstation/tgstation/master/icons/obj/machines/recycling.dmi"))
 spaghettiMachine:set_var("icon_state", "separator-AO1")
 spaghettiMachine:set_var("density", true)
-spaghettiMachine:set_var("plane", -3)
+spaghettiMachine:set_var("plane", -4)
 spaghettiMachine:set_var("layer", 4.7)
 
 local x = spaghettiMachine:get_var("x")
@@ -53,6 +53,16 @@ SS13.new("/obj/machinery/conveyor/auto", dm.global_proc("_get_step", position, d
 SS13.new("/obj/machinery/conveyor/auto", locate(x, y, z), direction)
 SS13.new("/obj/machinery/conveyor/auto", dm.global_proc("_get_step", position, directionInverse), direction)
 
+local traits_to_add = {
+    "resist_low_pressure",
+    "resist_high_pressure",
+    "resist_cold",
+    "resist_heat",
+    "no_breath",
+    "rad_immunity",
+    "bomb_immunity"
+}
+
 local spaghetti = true
 SS13.register_signal(spaghettiMachine, "atom_bumped", function(_, entering_thing)
     SS13.set_timeout(0, function()
@@ -66,21 +76,31 @@ SS13.register_signal(spaghettiMachine, "atom_bumped", function(_, entering_thing
         end
 
         if spaghetti then
-            if not SS13.istype(entering_thing, "/mob/living/carbon/human") then
+            if not SS13.istype(entering_thing, "/mob/living") then
                 return
             end
 
             dm.global_proc("playsound", spaghettiMachine:get_var("loc"), 'sound/items/welder.ogg', 50, true)
-            local spaghet = SS13.new_untracked("/obj/item/food/spaghetti/boiledspaghetti", spaghettiMachine:get_var("loc"))
+            local spaghet = SS13.new_untracked("/obj/item/blackbox", spaghettiMachine:get_var("loc"))
+            spaghet:set_var("name", "compressed object")
+            spaghet:set_var("w_class", 3)
             entering_thing:call_proc("forceMove", spaghet)
+            entering_thing:call_proc("add_traits", traits_to_add, "lua_compressor")
+            local enterRef = dm.global_proc("REF", entering_thing)
+            SS13.register_signal(spaghet, "atom_attack_hand", function(_, user)
+                if dm.global_proc("REF", user) == enterRef then
+                    return 1
+                end
+            end)
         else
-            if not SS13.istype(entering_thing, "/obj/item/food/spaghetti/boiledspaghetti") then
+            if not SS13.istype(entering_thing, "/obj/item/blackbox") then
                 return
             end
 
             dm.global_proc("playsound", spaghettiMachine:get_var("loc"), 'sound/items/welder.ogg', 50, true)
             for _, thing in entering_thing:get_var("contents") do
                 thing:call_proc("forceMove", spaghettiMachine:get_var("loc"))
+                thing:call_proc("remove_traits", traits_to_add, "lua_compressor")
             end
             SS13.qdel(entering_thing)
 
@@ -92,14 +112,14 @@ SS13.register_signal(spaghettiMachine, "tool_act_screwdriver", function()
     dm.global_proc("playsound", spaghettiMachine:get_var("loc"), 'sound/items/screwdriver.ogg', 50, true)
     spaghetti = not spaghetti
     if spaghetti then
-        spaghettiMachine:set_var("name", "spaghetti machine")
+        spaghettiMachine:set_var("name", "compressor")
     else
-        spaghettiMachine:set_var("name", "de-spaghetti machine")
+        spaghettiMachine:set_var("name", "uncompressor")
     end
     return 1
 end)
 SS13.register_signal(spaghettiMachine, "atom_tried_pass", function(_, mover, border_dir)
-    if not SS13.istype(mover, "/mob/living/carbon/human") and not SS13.istype(mover, "/obj/item/food/spaghetti/boiledspaghetti") then
+    if not SS13.istype(mover, "/mob/living") and not SS13.istype(mover, "/obj/item/blackbox") then
         if dm.global_proc("_get_dir", spaghettiMachine, mover) == directionInverse then
             return 1
         end

@@ -1,19 +1,68 @@
-SS13 = require("SS13")
+local SS13 = require("SS13")
+local HandlerGroup = require("handler_group")
 
-local IS_LOCAL = true
+local IS_LOCAL = false
 local admin = "waltermeldron"
-local LOCAL_CLASS = "Tank"
-local ALLOW_ZOMBIE_CONTROLLABLE = false
+local LOCAL_CLASS = "Zombie (AI)"
+local ALLOW_ZOMBIE_CONTROLLABLE = true
+local DESTRUCTIBLE_SPAWNERS = true
+local ALLOW_TANK_SPAWN = false
 
 local tickLag = function(tickUsageStart, worldTime)
 	if dm.world:get_var("time") ~= worldTime then
 		print("We slept somewhere!")
 		return true
 	end
-	return (dm.world:get_var("tick_usage") - tickUsageStart) >= 50 or over_exec_usage(0.7)
+	return (dm.world:get_var("tick_usage") - tickUsageStart) >= 50 or over_exec_usage(0.5)
 end
 if not IS_LOCAL then
-	SS13.await(SS13.global_proc, "__lua_set_execution_limit", 5000)
+	SS13.await(SS13.global_proc, "__lua_set_execution_limit", 50000)
+end
+
+local LAST_TIME_TAKEN
+local WORLD_TIME
+local TIME_AVG = {}
+local SLEEPING_AT = {}
+local TOTAL_TIME_TAKEN = {}
+local TOTAL_CALL_COUNT = {}
+
+local startPerfTrack = function()
+	WORLD_TIME = dm.world:get_var("time")
+	local lineNumber = debug.info(2, 'l')
+	TIME_AVG[lineNumber] = 0
+	TOTAL_TIME_TAKEN[lineNumber] = 0
+	TOTAL_CALL_COUNT[lineNumber] = (TOTAL_CALL_COUNT[lineNumber] or 0) + 1
+	LAST_TIME_TAKEN = os.clock()
+end
+
+local istype_old = SS13.istype
+SS13.istype = function(datum, text)
+	if not datum then
+		return false
+	end
+	if text == "/datum" or text == "/atom" or text == "/atom/movable" then
+		return istype_old(datum, text)
+	end
+	local datumType = tostring(datum:get_var("type"))
+	return string.find(datumType, text) ~= nil
+end
+
+local checkPerf = function(ignoreSleep)
+	local lineNumber = debug.info(2, 'l')
+	if WORLD_TIME ~= dm.world:get_var("time") then
+		if ignoreSleep then
+			return
+		end
+		SLEEPING_AT[lineNumber] = true
+		WORLD_TIME = dm.world:get_var("time")
+	end
+	local currTime = os.clock()
+	local currentDiff = currTime - LAST_TIME_TAKEN
+	local prevDiff = TIME_AVG[lineNumber] or currentDiff
+	TIME_AVG[lineNumber] = 0.8 * prevDiff + 0.2 * currentDiff
+	TOTAL_TIME_TAKEN[lineNumber] = (TOTAL_TIME_TAKEN[lineNumber] or 0) + currentDiff
+	TOTAL_CALL_COUNT[lineNumber] = (TOTAL_CALL_COUNT[lineNumber] or 0) + 1
+	LAST_TIME_TAKEN = currTime
 end
 
 sleep()
@@ -63,7 +112,14 @@ local hasTrait = function (target, trait)
 end
 
 local isZombie = function(human)
-	return dm.global_proc("is_species", human, SS13.type("/datum/species/zombie/infectious")) == 1
+	if not SS13.istype(human, "/mob/living/carbon/human") then
+		return false
+	end
+	local dna = human:get_var("dna")
+	if not dna then
+		return false
+	end
+	return SS13.istype(dna:get_var("species"), "/datum/species/zombie/infectious") 
 end
 
 local infectTarget = function(human, def_type)
@@ -236,6 +292,18 @@ local makeZombieController = function(location)
 				zombieControllerTargets[controllerRef] = nil
 			end)
 		end
+
+		local potentialTargets = dm.global_proc("get_hearers_in_range", 8, controller)
+		for _, zombie in potentialTargets do
+			if not isZombie(zombie) then
+				continue
+			end
+			local mutData = getZombieMutation(zombie)
+			if not mutData or mutData.class ~= "Zombie (AI)" then
+				continue
+			end
+			mutData.zombieAi.nextTargetSearch = 0
+		end
 	end)
 	local oldZ
 	SS13.register_signal(controller, "mob_client_move_possessed_object", function(_, new_loc, direct)
@@ -260,6 +328,9 @@ local makeZombieController = function(location)
 			zList:remove(controller)
 		end
 	end)
+	if not ALLOW_TANK_SPAWN then
+		return controller
+	end
 	local promotedTank
 	local cooldown = 900
 	grantAbility(controllerData, {
@@ -283,9 +354,10 @@ local makeZombieController = function(location)
 				return 1
 			end
 
-			setClass(mutation, "Tank")
 			SS13.set_timeout(0, function()
-				local players = SS13.await(dm.global_vars:get_var("SSpolling"), "poll_ghost_candidates", "The mode is looking for volunteers to become a Tank", nil, nil, 100, nil, true, target, target, "Tank")
+				local objective = dm.global_proc("sanitize", SS13.await(SS13.global_proc, "tgui_input_text", controller, "Please input an objective for this tank", "Tank objective"))
+				setClass(mutation, "Tank")
+				local players = SS13.await(dm.global_vars:get_var("SSpolling"), "poll_ghost_candidates", "The mode is looking for volunteers to become a Tank to do the following: "..objective, nil, nil, 100, nil, true, target, target, "Tank")
 				if not SS13.is_valid(target) then
 					if SS13.is_valid(action) then
 						action:call_proc("StartCooldownSelf", 1)
@@ -305,13 +377,12 @@ local makeZombieController = function(location)
 				local zombieMind = SS13.new("/datum/mind", client:get_var("key"))
 				zombieMind:call_proc("transfer_to", target, true)
 				promotedTank = target
-				local deathCallback
-				deathCallback = SS13.register_signal(promotedTank, "living_death", function()
+				HandlerGroup.register_once(promotedTank, "living_death", function()
 					if SS13.is_valid(action) then
 						action:call_proc("StartCooldownSelf", cooldown * 10)
 					end
-					SS13.unregister_signal(promotedTank, "living_death", deathCallback)
 				end)
+				to_chat(promotedTank, "<span class='userdanger'>Your goal is to do the following: "..objective.."</span>")
 			end)
 		end
 	})
@@ -325,7 +396,8 @@ local function makePlayersVulnerable(position)
 		return
 	end
 	for _, player in players:of_type("/mob/living/carbon/human") do
-		local callback = SS13.register_signal(player, "atom_expose_reagents", function(_, reagents)
+		local handler = HandlerGroup.new()
+		handler:register_signal(player, "atom_expose_reagents", function(_, reagents)
 			for reagent, amount in reagents do
 				if SS13.istype(reagent, "/datum/reagent/toxin/acid/fluacid") then
 					infectTarget(player)
@@ -333,9 +405,7 @@ local function makePlayersVulnerable(position)
 			end
 		end)
 		SS13.set_timeout(5, function()
-			if SS13.is_valid(player) then
-				SS13.unregister_signal(player, "atom_expose_reagents", callback)
-			end
+			handler:clear()
 		end)
 	end
 end
@@ -375,11 +445,13 @@ local startAiControllerLoop = function()
 
 		local tickStart = dm.world:get_var("tick_usage")
 		local timeStart = dm.world:get_var("time")
-		while #currentRun > 0 do
+		local length = #currentRun
+		while length > 0 do
 			if tickLag(tickStart, timeStart) then
 				return
 			end
 			local zombie = table.remove(currentRun)
+			length -= 1
 			zombie:execute()
 		end
 
@@ -389,11 +461,17 @@ local startAiControllerLoop = function()
 end
 
 local isZombieTarget = function(target)
-	return not isZombie(target) and (SS13.istype(target, "/mob/living/carbon/human") or (SS13.istype(target, "/mob/living/silicon") and target:get_var("client")))
+	if isZombie(target) then
+		return false
+	end
+	return SS13.istype(target, "/mob/living/carbon/human") or (SS13.istype(target, "/mob/living/silicon") and target:get_var("client"))
 end
 startAiControllerLoop()
 local chasedTargets = {}
 local mobRefToDatum = {}
+
+CURRENT_CHASED_TARGETS = chasedTargets
+CURRENT_MOB_REF_TO_DATUM = mobRefToDatum
 
 local SSspacedrift = dm.global_vars:get_var("SSspacedrift")
 local SSmove_manager = dm.global_vars:get_var("SSmove_manager")
@@ -408,55 +486,70 @@ local createZombieAi = function(zombieData)
 		crawler = math.random(1, 5) == 1,
 		nextRandomWander = 100,
 		setTarget = function(self, target)
+			checkPerf(true)
 			if self.target then
 				self:clearTarget()
 			end
+			checkPerf(true)
 			if self.pathingDatum then
 				SSmove_manager:call_proc("stop_looping", zombieMob, SSspacedrift)
 			end
+			checkPerf(true)
 			self.target = target
 			local targetRef = REF(target)
-			if not chasedTargets[targetRef] then
-				chasedTargets[targetRef] = 0
+			local chasedTarget = chasedTargets[targetRef]
+			checkPerf(true)
+			if not chasedTarget then
+				chasedTarget = 0
 				mobRefToDatum[targetRef] = target
 			end
-			chasedTargets[targetRef] += 1
-			self.targetQdelCallback = SS13.register_signal(target, "parent_qdeleting", function()
-				self:clearTarget()
-			end)
+			checkPerf(true)
+			chasedTarget += 1
+			chasedTargets[targetRef] = chasedTarget
 			self.processing = true
-			self.targetSearchFails = 0
 		end,
 		clearTarget = function(self)
 			if not self.target then
 				return
 			end
+			checkPerf(true)
 			local targetRef = REF(self.target)
-			if chasedTargets[targetRef] then
-				chasedTargets[targetRef] -= 1
-				if chasedTargets[targetRef] == 0 then
+			checkPerf(true)
+			local chasedTarget = chasedTargets[targetRef]
+			checkPerf(true)
+			if chasedTarget then
+				chasedTarget -= 1
+				if chasedTarget == 0 then
 					chasedTargets[targetRef] = nil
 					mobRefToDatum[targetRef] = nil
+				else
+					chasedTargets[targetRef] = chasedTarget
 				end
 			end
+			checkPerf(true)
 			if self.pathingDatum then
 				SSmove_manager:call_proc("stop_looping", zombieMob, SSspacedrift)
 			end
-			SS13.unregister_signal(self.target, "parent_qdeleting", self.targetQdelCallback)
 			self.target = nil
 		end,
 		execute = function(self)
+			startPerfTrack()
 			if not SS13.is_valid(zombieMob) then
 				self:cleanup()
+				return
+			end
+			checkPerf()
+			if not self.processing or not self.valid then
 				return
 			end
 			if zombieMob:get_var("stat") ~= 0 then
 				self.processing = false
 				return
 			end
+			checkPerf()
 			local worldTime = dm.world:get_var("time")
 			self.nextClickOn = self.nextClickOn or 0
-			if not SS13.istype(zombieMob:get_var("loc"), "/turf") or zombieMob:call_proc("incapacitated") == 1 then
+			if not SS13.istype(zombieMob:get_var("loc"), "/turf") then
 				if self.pathingDatum then
 					SSmove_manager:call_proc("stop_looping", zombieMob, SSspacedrift)
 				end
@@ -465,6 +558,7 @@ local createZombieAi = function(zombieData)
 				end)
 				return
 			end
+			checkPerf()
 			if zombieMob:get_var("body_position") == 1 then
 				self.nextGetup = self.nextGetup or 0
 				if worldTime > self.nextGetup then 
@@ -474,12 +568,14 @@ local createZombieAi = function(zombieData)
 					self.nextGetup = worldTime + 50
 				end
 			end
+			checkPerf()
 			if hasTrait(zombieMob, "block_transformations") then
 				if self.pathingDatum then
 					SSmove_manager:call_proc("stop_looping", zombieMob, SSspacedrift)
 				end
 				return
 			end
+			checkPerf()
 			self.nextTargetSearch = self.nextTargetSearch or 0
 			local closestTarget
 			local zombieLocation = dm.global_proc("_get_step", zombieMob, 0)
@@ -487,10 +583,12 @@ local createZombieAi = function(zombieData)
 				return
 			end
 			if worldTime >= self.nextTargetSearch then
-				self.nextTargetSearch = worldTime + 30
+				self.nextTargetSearch = worldTime + 100
 				local closestDist = 1000
-				local potentialTargets = SSspacial_grid:call_proc("orthogonal_range_search", zombieMob, "recursive_contents_hearing_sensitive", 4)
-				for _, target in potentialTargets do
+				checkPerf()
+				local potentialTargets = dm.global_proc("get_hearers_in_LOS", 7, zombieMob)
+				checkPerf()
+				for _, target in ipairs(potentialTargets:to_table()) do
 					if not isZombieTarget(target) then
 						continue
 					end
@@ -507,6 +605,7 @@ local createZombieAi = function(zombieData)
 						closestTarget = target
 					end
 				end
+				checkPerf()
 				if not closestTarget then
 					local tryGetTarget = function(table)
 						for _, target in table do
@@ -527,10 +626,14 @@ local createZombieAi = function(zombieData)
 							end
 						end
 					end
+					checkPerf()
 					tryGetTarget(zombieControllerTargets)
-					if not closestTarget then
-						tryGetTarget(mobRefToDatum)
-					end
+					checkPerf()
+					-- if not closestTarget then
+					-- 	checkPerf()
+					-- 	tryGetTarget(mobRefToDatum)
+					-- 	checkPerf()
+					-- end
 				end
 				if not closestTarget and SS13.istype(self.target, "/turf") then
 					self:clearTarget()
@@ -539,9 +642,13 @@ local createZombieAi = function(zombieData)
 
 			if closestTarget and (not self.target or REF(self.target) ~= REF(closestTarget)) then
 				if SS13.istype(closestTarget, "/turf") then
+					checkPerf()
 					self:setTarget(closestTarget)
+					checkPerf()
 				else
+					checkPerf()
 					self:setTarget(dm.global_proc("get_atom_on_turf", closestTarget))
+					checkPerf()
 				end
 			end
 
@@ -553,6 +660,9 @@ local createZombieAi = function(zombieData)
 				self:clearTarget()
 				if worldTime >= self.nextRandomWander then
 					SS13.start_loop(0, 1, function()
+						if SS13.is_valid(self.target) then
+							return
+						end
 						local dir = dm.global_proc("_pick_list", dm.global_vars:get_var("GLOB"):get_var("cardinals"))
 						zombieMob:call_proc("Move", dm.global_proc("_get_step", zombieMob, dir), dir)
 					end)
@@ -560,36 +670,46 @@ local createZombieAi = function(zombieData)
 				end
 				return
 			end
+			checkPerf()
 			if (SS13.istype(self.target, "/mob/living") and self.target:get_var("stat") == 4) or isZombie(self.target) then
 				self:clearTarget()
 				return
 			end
+			checkPerf()
 			local location = dm.global_proc("_get_step", self.target, 0)
 			local distance = dm.global_proc("_get_dist", zombieLocation, location) 
+			checkPerf()
 			if distance >= 10 then
 				self:clearTarget()
 				return
 			end
+			checkPerf()
 
 			if distance > 1 then
 				self.nextClickOn = worldTime + 10
 			end
 
+			checkPerf()
 			if (distance ~= -1 and distance <= 1) or zombieLocation == location then
 				if worldTime >= self.nextClickOn and (zombieMob:get_var("body_position") ~= 1 or self.crawler)  then
-					zombieMob:call_proc("ClickOn", self.target, {})
+					SS13.set_timeout(0, function()
+						zombieMob:call_proc("ClickOn", self.target, {})
+					end)
 				end
 			end
+			checkPerf()
 
 			if self.isPathing and self.pathingTarget ~= self.target then
 				SSmove_manager:call_proc("stop_looping", zombieMob, SSspacedrift)
 			end
 
 			if not self.isPathing and distance > 1 then 
+				checkPerf()
 				self.pathingDatum = SSmove_manager:call_proc("home_onto", zombieMob, self.target, zombieMob:get_var("cached_multiplicative_slowdown"), 1e31, SSspacedrift)
 				self.isPathing = true
 				self.pathingTarget = self.target
-				local moveLoopCallback = SS13.register_signal(zombieMob, "movable_moved_from_loop", function(_, moveLoop, oldDir, direction)
+				local handler = HandlerGroup.new()
+				handler:register_signal(zombieMob, "movable_moved_from_loop", function(_, moveLoop, oldDir, direction)
 					local target = dm.global_proc("_get_step", zombieMob, oldDir)
 					zombieMob:set_var("combat_mode", 1)
 					local toClickOn
@@ -605,17 +725,22 @@ local createZombieAi = function(zombieData)
 						end
 					end
 					if toClickOn then
-						zombieMob:call_proc("ClickOn", toClickOn, {})
+						SS13.set_timeout(0, function()
+							zombieMob:call_proc("ClickOn", toClickOn, {})
+						end)
 					end
 				end)
 				SS13.register_signal(self.pathingDatum, "parent_qdeleting", function()
 					self.isPathing = false
 					self.pathingTarget = false
 					self.pathingDatum = nil
-					SS13.unregister_signal(zombieMob, "movable_moved_from_loop", moveLoopCallback)
+					handler:clear()
 				end)
+				checkPerf()
 			elseif distance <= 1 then
+				checkPerf()
 				SSmove_manager:call_proc("stop_looping", zombieMob, SSspacedrift)
+				checkPerf()
 			end
 		end,
 		cleanup = function(self)
@@ -654,6 +779,7 @@ local createZombieAi = function(zombieData)
 			if aiData.pathingDatum then
 				SSmove_manager:call_proc("stop_looping", zombieMob, SSspacedrift)
 			end
+			aiData:clearTarget()
 		else
 			aiData.processing = true
 			if not insideList then
@@ -778,36 +904,34 @@ ABILITIES = {
 					if not SS13.is_valid(thrown_proj) then
 						return
 					end
-					thrown_proj:set_var("icon_state", "lobster_claw")
-					local chain = thrown_proj:get_var("initial_chain")
-					chain:set_var("icon_state", "tentacle")
-					chain:get_var("visuals"):set_var("icon_state", "tentacle")
-					local uiBlockedCallback
-					uiBlockedCallback = SS13.register_signal(humanData.human, "addtrait uiblocked", function()
-						SS13.unregister_signal(humanData.human, "addtrait uiblocked", uiBlockedCallback)
-						for _, source in humanData.human:get_var("_status_traits"):get("uiblocked") do
-							local thing = dm.global_proc("_locate", source)
-							if not thing or not SS13.istype(thing, "/datum/hook_and_move") then
-								continue
-							end
-							local chain = thing:get_var("return_chain")
-							chain:set_var("icon_state", "tentacle")
-							chain:get_var("visuals"):set_var("icon_state", "tentacle")
-						end
-					end)
+					-- thrown_proj:set_var("icon_state", "lobster_claw")
+					-- local chain = thrown_proj:get_var("initial_chain")
+					-- chain:set_var("icon_state", "tentacle")
+					-- chain:get_var("visuals"):set_var("icon_state", "tentacle")
+					-- local uiBlockedCallback
+					-- uiBlockedCallback = SS13.register_signal(humanData.human, "addtrait uiblocked", function()
+					-- 	SS13.unregister_signal(humanData.human, "addtrait uiblocked", uiBlockedCallback)
+					-- 	for _, source in humanData.human:get_var("_status_traits"):get("uiblocked") do
+					-- 		local thing = dm.global_proc("_locate", source)
+					-- 		if not thing or not SS13.istype(thing, "/datum/hook_and_move") then
+					-- 			continue
+					-- 		end
+					-- 		local chain = thing:get_var("return_chain")
+					-- 		chain:set_var("icon_state", "tentacle")
+					-- 		chain:get_var("visuals"):set_var("icon_state", "tentacle")
+					-- 	end
+					-- end)
 					SS13.register_signal(thrown_proj, "projectile_self_on_hit", function(_, firer, target, Angle, hit_limb_zone, blocked)
 						SS13.set_timeout(0, function()
-							if SS13.is_valid(humanData.human) then
-								SS13.unregister_signal(humanData.human, "addtrait uiblocked", uiBlockedCallback)
-							end
+							-- if SS13.is_valid(humanData.human) then
+							-- 	SS13.unregister_signal(humanData.human, "addtrait uiblocked", uiBlockedCallback)
+							-- end
 							if not hasTrait(target, "hooked") then
 								return
 							end
 							dm.global_proc("_add_trait", target, "block_transformations", "zs_hooked")
-							local removeTraitCallback
-							removeTraitCallback = SS13.register_signal(target, "removetrait hooked", function()
+							HandlerGroup.register_once(target, "removetrait hooked", function()
 								dm.global_proc("_remove_trait", target, "block_transformations", "zs_hooked")
-								SS13.unregister_signal(target, "removetrait hooked", removeTraitCallback)
 							end)
 						end)
 					end)
@@ -837,14 +961,14 @@ ABILITIES = {
 		icon = "https://raw.githubusercontent.com/tgstation/tgstation/master/icons/mob/actions/actions_items.dmi",
 		icon_state = "jetboot",
 		abilityType = "targeted",
-		cooldown = 5,
+		cooldown = 15,
 		onActivate = function(humanData, action, target)
 			if SS13.is_valid(humanData.riding) then
 				return BLOCK_ACTIVATION
 			end
 			SS13.set_timeout(0, function()
 				dm.global_proc("playsound", humanData.human, "sound/weapons/fwoosh.ogg", 100, true)
-				local callback = SS13.register_signal(humanData.human, "movable_pre_impact", function(human, hit_target, thrownthing)
+				HandlerGroup.register_once(humanData.human, "movable_pre_impact", function(human, hit_target, thrownthing)
 					if not SS13.istype(hit_target, "/mob/living/carbon/human") or hasTrait(hit_target, "zs_being_ridden") or isZombie(hit_target) or hasTrait(hit_target, "floored") then
 						return
 					end
@@ -857,7 +981,8 @@ ABILITIES = {
 					humanData.riding = hit_target
 					local cooldown = 0
 					local cancelRiding
-					local relaymove_callback = SS13.register_signal(hit_target, "atom_relaymove", function(_, user, direction)
+					local ridingHandler = HandlerGroup.new()
+					ridingHandler:register_signal(hit_target, "atom_relaymove", function(_, user, direction)
 						if REF(user) ~= REF(human) then
 							return
 						end
@@ -869,12 +994,12 @@ ABILITIES = {
 						cooldown = worldTime + 10
 						return 1
 					end)
-					local stat_change_callback = SS13.register_signal(hit_target, "mob_statchange", function(_, new_stat)
+					ridingHandler:register_signal(hit_target, "mob_statchange", function(_, new_stat)
 						if new_stat ~= 0 then
 							cancelRiding()
 						end
 					end)
-					local move_callback = SS13.register_signal(hit_target, "movable_moved", function(_, oldloc, dir)
+					ridingHandler:register_signal(hit_target, "movable_moved", function(_, oldloc, dir)
 						if REF(human:get_var("remote_control")) ~= REF(hit_target) then
 							cancelRiding()
 							return
@@ -882,21 +1007,21 @@ ABILITIES = {
 						human:call_proc("setDir", dir)
 						human:call_proc("forceMove", hit_target:get_var("loc"))
 					end)
-					SS13.register_signal(hit_target, "parent_qdeleting", function()
+					ridingHandler:register_signal(hit_target, "parent_qdeleting", function()
 						cancelRiding()
 					end)
-					SS13.register_signal(human, "parent_qdeleting", function()
+					ridingHandler:register_signal(human, "parent_qdeleting", function()
 						cancelRiding()
 					end)
-					local stat_change_callback_parent = SS13.register_signal(human, "mob_statchange", function(_, new_stat)
+					ridingHandler:register_signal(human, "mob_statchange", function(_, new_stat)
 						if new_stat ~= 0 then
 							cancelRiding()
 						end
 					end)
-					local knockdown_callback = SS13.register_signal(hit_target, "addtrait floored", function()
+					ridingHandler:register_signal(hit_target, "addtrait floored", function()
 						cancelRiding()
 					end)
-					local human_knockdown_callback = SS13.register_signal(human, "addtrait floored", function()
+					ridingHandler:register_signal(human, "addtrait floored", function()
 						cancelRiding()
 					end)
 					local dismount = {
@@ -909,17 +1034,13 @@ ABILITIES = {
 							cancelRiding()
 						end
 					}
+					hit_target:call_proc("emote", "scream")
 					local timerId = SS13.start_loop(5, -1, function()
 						hit_target:call_proc("emote", "scream")
 					end)
 					local dismountAbility
 					cancelRiding = function()
-						SS13.unregister_signal(hit_target, "atom_relaymove", relaymove_callback)
-						SS13.unregister_signal(hit_target, "movable_moved", move_callback)
-						SS13.unregister_signal(hit_target, "addtrait floored", knockdown_callback)
-						SS13.unregister_signal(hit_target, "mob_statchange", stat_change_callback_parent)
-						SS13.unregister_signal(human, "addtrait floored", human_knockdown_callback)
-						SS13.unregister_signal(human, "mob_statchange", stat_change_callback_parent)
+						ridingHandler:clear()
 						human:set_var("remote_control", nil)
 						human:set_var("pixel_z", 0)
 						humanData.riding = nil
@@ -928,7 +1049,6 @@ ABILITIES = {
 						SS13.end_loop(timerId)
 						SS13.qdel(dismountAbility)
 					end
-					SS13.unregister_signal(human, "movable_pre_impact", callback)
 					dismountAbility = grantAbility(humanData, dismount)
 				end)
 				humanData.human:call_proc("throw_at", target, 5, 3, humanData.human, false, false, nil, 2000, true)
@@ -1005,6 +1125,7 @@ CLASSES = {
 	["Zombie (AI)"] = {
 		slowdown = 0.75,
 		slowdownRandom = 0.5,
+		damageResist = 0,
 		noRevive = true,
 		aiEnabled = true,
 		onGain = function(self, humanData)
@@ -1108,9 +1229,11 @@ CLASSES = {
 		},
 		onGain = function(self, humanData)
 			setIcon(humanData, "jockey")
+			humanData.human:set_var("pass_flags", 1)
 		end,
 		onLoss = function(self, humanData)
 			resetIcon(humanData)
+			humanData.human:set_var("pass_flags", 0)
 		end
 	},
 	["Smoker"] = {
@@ -1262,15 +1385,46 @@ local function labelDisplay(label_name, content)
 	return "<div style='display: flex; margin-top: 4px;'><div style='flex-grow: 1; color: #98B0C3;'>"..label_name..":</div><div>"..content.."</div></div>"
 end
 
+local function getReadablePerfStat(number)
+	return tostring(math.floor(number * 1000000) / 1000)
+end
+
 local function openMobSettings(user, humanData)
 	local userCkey = user:get_var("ckey")
-	local browser = SS13.new_untracked("/datum/browser", user, "SettingsMenu", "SettingsMenu", 300, 200)
+	local browser = SS13.new_untracked("/datum/browser", user, "SettingsMenu", "SettingsMenu", 300, 300)
 	local data = ""
 	data = data.."<h1>Settings Menu</h1></hr>"
+	data = data..labelDisplay("Refresh", createHref(humanData.human, "refresh=1", "Refresh"))
 	data = data..labelDisplay("Cure", createHref(humanData.human, "spawn_cure=1", "Spawn Cure Crate"))
 	data = data..labelDisplay("Cure", createHref(humanData.human, "spawn_cure_spawner=1", "Spawn Cure Spawner"))
 	data = data..labelDisplay("Zombie AI", createHref(humanData.human, "spawn_zombie_ai=1", "Spawn Zombie AI"))
 	data = data..labelDisplay("Zombie Spawner", createHref(humanData.human, "spawn_zombie_spawner=1", "Spawn Zombie Spawner"))
+	data = data..labelDisplay("Supplies", createHref(humanData.human, "spawn_supply_crate=1", "Spawn Supply Crate"))
+	data = data..labelDisplay("Supplies", createHref(humanData.human, "spawn_supply_crate=1;timed=1", "Spawn Timed Supply Crate"))
+	data = data.."</hr>"
+	data = data.."<b>TOTAL ZOMBIE AI: "..tostring(#ZOMBIE_AI).."</b><br>"
+	local prevLine
+	local TIME_AVG_KEYS = {}
+	for key, value in TIME_AVG do
+		table.insert(TIME_AVG_KEYS, key)
+	end
+	table.sort(TIME_AVG_KEYS)
+	for _, line in ipairs(TIME_AVG_KEYS) do
+		local avg = TIME_AVG[line]
+		local total = TOTAL_TIME_TAKEN[line]
+		local count = TOTAL_CALL_COUNT[line]
+		if not prevLine then
+			prevLine = line
+			continue
+		end
+		local isSleeping = SLEEPING_AT[line]
+		local status = " "
+		if isSleeping then
+			status = "S"
+		end
+		data = data..tostring(prevLine).."-"..line.." ["..status.."]: "..getReadablePerfStat(avg).." | "..getReadablePerfStat(total).." | "..tostring(count).."<br>"
+		prevLine = line
+	end
 	browser:call_proc("set_content", data)
 	browser:call_proc("open")
 end
@@ -1317,7 +1471,11 @@ setClass = function(humanData, class)
 	if previousClass.damageResist then
 		local phys = humanData.human:get_var("physiology")
 		for _, damageType in damageTypes do
-			phys:set_var(damageType, phys:get_var(damageType) + 0.01 * previousClass.damageResist)
+			if damageType == "siemens_coeff" then
+				phys:set_var(damageType, phys:get_var(damageType) + 0.8)
+			else
+				phys:set_var(damageType, phys:get_var(damageType) + 0.01 * previousClass.damageResist)
+			end
 		end
 	end
 	if class == nil then
@@ -1390,7 +1548,11 @@ setClass = function(humanData, class)
 	if newClass.damageResist then
 		local phys = humanData.human:get_var("physiology")
 		for _, damageType in damageTypes do
-			phys:set_var(damageType, phys:get_var(damageType) - 0.01 * newClass.damageResist)
+			if damageType == "siemens_coeff" then
+				phys:set_var(damageType, phys:get_var(damageType) - 0.8)
+			else
+				phys:set_var(damageType, phys:get_var(damageType) - 0.01 * newClass.damageResist)
+			end
 		end
 	end
 	if newClass.onGain then
@@ -1464,15 +1626,49 @@ local function setupZombieMutation(human)
 				return
 			end
 
-			if href_list:get("settings") then
+			if href_list:get("settings") or href_list:get("refresh") then
 				openMobSettings(user, humanData)
 			end
 
-			if href_list:get("spawn_cure") then
+			if href_list:get("spawn_supply_crate") then
+				local pod = dm.global_proc("podspawn", {
+					target = user:get_var("loc"),
+					style = 3,
+				})
+
+				local crate = SS13.new("/obj/structure/closet/crate/secure/gear", pod)
+				crate:set_var("name", "secure supply crate")
+
+				if href_list:get("timed") then
+					crate:set_var("req_access", { "admin" })
+					crate:set_var("anchored", true)
+					crate:call_proc("say", "Disengaging secure locks in 30 seconds")
+					SS13.start_loop(10, 3, function(i)
+						if not SS13.is_valid(crate) then
+							return
+						end
+						if i == 3 then
+							crate:call_proc("bust_open")
+							crate:call_proc("say", "Secure locks disengaged.")
+						else
+							crate:call_proc("say", "Disengaging secure locks in "..tostring(3-i).."0 seconds")
+						end
+					end)
+				end
+
+				for i = 1, 4 do
+					SS13.new_untracked("/obj/item/gun/energy/laser", crate)
+				end
+				for i = 1, 2 do
+					SS13.new_untracked("/obj/item/defibrillator/compact/loaded", crate)
+				end
+				for i = 1, 3 do
+					SS13.new_untracked("/obj/item/storage/medkit/tactical_lite", crate)
+				end
+			elseif href_list:get("spawn_cure") then
 				local crate = SS13.new("/obj/structure/closet/crate/secure/freezer", user:get_var("loc"))
 				crate:set_var("base_icon_state", "freezer")
 				crate:set_var("icon_state", "freezer")
-				crate:set_var("req_access", { "cmo" })
 				crate:set_var("name", "secure biocrate")
 
 				for i = 1, 5 do
@@ -1533,12 +1729,14 @@ local function setupZombieMutation(human)
 				local zombieSpawn = SS13.new("/obj/structure/geyser", user:get_var("loc"))
 				zombieSpawn:set_var("name", "biological lump")
 				zombieSpawn:set_var("color", "#008000")
-				zombieSpawn:set_var("resistance_flags", 499)
+				if not DESTRUCTIBLE_SPAWNERS then
+					zombieSpawn:set_var("resistance_flags", 499)
+				end
 				zombieSpawn:set_var("anchored", true)
 				zombieSpawn:set_var("layer", 4.1)
 				zombieSpawn:set_var("pixel_y", -4)
 
-				local spawnZombieFunc = function(force)
+				local spawnZombieFunc = function(force, forceSpecial)
 					if not SS13.is_valid(zombieSpawn) then
 						return
 					end
@@ -1548,7 +1746,7 @@ local function setupZombieMutation(human)
 					local spawnLocation = zombieSpawn:get_var("loc")
 					local zombieClass = "Zombie (AI)"
 					local zombieMind
-					if math.random(1, 10) == 1 then
+					if math.random(1, 10) == 1 or forceSpecial then
 						local class = dm.global_proc("_pick_list", { "Boomer", "Jockey", "Smoker" })
 						local players = SS13.await(dm.global_vars:get_var("SSpolling"), "poll_ghost_candidates", "The mode is looking for volunteers to become a "..class, nil, nil, 300, nil, true, zombieSpawn, zombieSpawn, class)
 						if not players or players.len == 0 then
@@ -1583,17 +1781,14 @@ local function setupZombieMutation(human)
 					zombo:set_var("anchored", false)
 					dm.global_proc("_remove_trait", zombo, "block_transformations", "zs_spawner")
 					local spent = false
-					local qdelCallback
-					local livingCallback
-					livingCallback = SS13.register_signal(zombo, "living_death", function()
+					local handler = HandlerGroup.new()
+					handler:register_signal(zombo, "living_death", function()
 						totalZombies -= 1
-						SS13.unregister_signal(zombo, "living_death", livingCallback)
-						SS13.unregister_signal(zombo, "parent_qdeleting", qdelCallback)
+						handler:clear()
 					end)
-					qdelCallback = SS13.register_signal(zombo, "parent_qdeleting", function()
+					handler:register_signal(zombo, "parent_qdeleting", function()
 						totalZombies -= 1
-						SS13.unregister_signal(zombo, "living_death", livingCallback)
-						SS13.unregister_signal(zombo, "parent_qdeleting", qdelCallback)
+						handler:clear()
 					end)
 				end
 
@@ -1604,6 +1799,11 @@ local function setupZombieMutation(human)
 				SS13.register_signal(zombieSpawn, "ctrl_click", function(_, clicker)
 					if clicker:get_var("ckey") == admin then
 						spawnZombieFunc(true)
+					end
+				end)
+				SS13.register_signal(zombieSpawn, "ctrl_shift_click", function(_, clicker)
+					if clicker:get_var("ckey") == admin then
+						spawnZombieFunc(true, true)
 					end
 				end)
 			end
@@ -1676,8 +1876,9 @@ else
 	for _, human in dm.global_vars:get_var("GLOB"):get_var("mob_list") do
 		if tickLag(tickStart, timeStart) then
 			sleep()
+			timeStart = dm.world:get_var("time")
 		end
-		if SS13.istype(human, "/mob/living/carbon/human") then
+		if SS13.istype(human, "/mob/living/carbon/human") and SS13.is_valid(human) then
 			setupZombieMutation(human)
 		end
 	end

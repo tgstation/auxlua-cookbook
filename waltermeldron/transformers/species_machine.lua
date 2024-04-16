@@ -38,9 +38,9 @@ local function locate(x, y, z)
     return dm.global_proc("_locate", x, y, z)
 end
 
-SS13.new("/obj/machinery/conveyor/auto", locate(x - 1, y, z), 8)
-SS13.new("/obj/machinery/conveyor/auto", locate(x, y, z), 8)
-SS13.new("/obj/machinery/conveyor/auto", locate(x + 1, y, z), 8)
+SS13.new("/obj/machinery/conveyor/auto", locate(x, y - 1, z), 2)
+SS13.new("/obj/machinery/conveyor/auto", locate(x, y, z), 2)
+SS13.new("/obj/machinery/conveyor/auto", locate(x, y + 1, z), 2)
 
 SS13.register_signal(spaghettiMachine, "atom_bumped", function(_, entering_thing)
     SS13.set_timeout(0, function()
@@ -49,7 +49,7 @@ SS13.register_signal(spaghettiMachine, "atom_bumped", function(_, entering_thing
         end
 
         local move_dir = dm.global_proc("_get_dir", spaghettiMachine:get_var("loc"), entering_thing:get_var("loc"))
-        if move_dir ~= 4 then
+        if move_dir ~= 1 then
             return
         end
 
@@ -61,7 +61,7 @@ end)
 
 SS13.register_signal(spaghettiMachine, "atom_tried_pass", function(_, mover, border_dir)
     if not SS13.istype(mover, "/mob/living/carbon/human") then
-        if dm.global_proc("_get_dir", spaghettiMachine, mover) == 4 then
+        if dm.global_proc("_get_dir", spaghettiMachine, mover) == 1 then
             return 1
         end
     end

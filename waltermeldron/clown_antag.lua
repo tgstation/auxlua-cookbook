@@ -90,10 +90,10 @@ local function setupAntag(mind)
 			},
 			Body = {
 				[1] = "+10% damage reduction, virus and rad immunity",
-				[2] = "+10% damage reduction, immune to flash",
-				[3] = "+10% damage reduction, thermal vision",
-				[4] = "+10% damage reduction, space immunity",
-				[5] = "+10% damage reduction, x-ray vision"
+				[2] = "+5% damage reduction, immune to flash",
+				[3] = "+5% damage reduction, thermal vision",
+				[4] = "+3% damage reduction, space immunity",
+				[5] = "+2% damage reduction, x-ray vision"
 			}
 		},
 		stats_description = {
@@ -122,7 +122,7 @@ local function setupAntag(mind)
 				[4] = function()
 					local shoes = mind:get_var("current"):get_var("shoes")
 					if shoes then
-						shoes:set_var("slowdown", 0)
+						shoes:set_var("slowdown", 0.05)
 						mind:get_var("current"):call_proc("update_equipment_speed_mods")
 					end
 				end
@@ -138,19 +138,19 @@ local function setupAntag(mind)
 				end,
 				[2] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 10)
+					reducePhysDamage(player, 5)
 					dm.global_proc("_add_trait", player, "noflash", "clown_antag")
 					player:call_proc("update_sight")
 				end,
 				[3] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 10)
+					reducePhysDamage(player, 5)
 					dm.global_proc("_add_trait", player, "thermal_vision", "clown_antag")
 					player:call_proc("update_sight")
 				end,
 				[4] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 10)
+					reducePhysDamage(player, 3)
 					player:call_proc("add_traits", {
 						"resist_low_pressure",
 						"resist_high_pressure",
@@ -160,7 +160,7 @@ local function setupAntag(mind)
 				end,
 				[5] = function()
 					local player = mind:get_var("current")
-					reducePhysDamage(player, 10)
+					reducePhysDamage(player, 2)
 					dm.global_proc("_add_trait", player, "xray_vision", "clown_antag")
 					player:call_proc("update_sight")
 				end,
@@ -691,28 +691,7 @@ local function setupAntag(mind)
 			end
 		end)
 		local isAttacking = false
-		-- Autoaim mode start, removed for now
-		-- local autoAimTarget = nil
-		-- SS13.register_signal(player, "mob_clickon", function(_, target, modifiers)
-		-- 	if SS13.istype(target, "/mob") or autoAimTarget == nil then
-		-- 		return
-		-- 	end
-		-- 	local attackingItem = player:get_var("held_items"):get(player:get_var("active_hand_index"))
-		-- 	if not SS13.istype(attackingItem, "/obj/item/knife") or dm.global_proc("_get_dist", autoAimTarget, player) >= 7 then
-		-- 		SS13.unregister_signal(autoAimTarget, "parent_preqdeleted")
-		-- 		autoAimTarget = nil
-		-- 		return
-		-- 	end
-		-- 	player:set_var("next_click", player:get_var("next_click") - 10)
-		-- 	local params = ""
-		-- 	for key, value in modifiers do
-		-- 		params = params .. key .. "=" .. value .. ";"
-		-- 	end
-		-- 	player:call_proc("ClickOn", autoAimTarget, params)
-		-- 	return 1
-		-- end)
-		-- Autoaim end
-		SS13.register_signal(player, "mob_item_attack", function(_, target_mob, _, params)
+		SS13.register_signal(player, "mob_item_attack", function(player_mob, target_mob, _, params)
 			local attackingItem = player:get_var("held_items"):get(player:get_var("active_hand_index"))
 			if not SS13.istype(attackingItem, "/obj/item/knife") then
 				return
@@ -721,7 +700,7 @@ local function setupAntag(mind)
 			if antagData.stats.Knife >= 3 then
 				damageBuff = 5
 			end
-			if SS13.istype(target_mob, "/mob/living/carbon/human") and target_mob:get_var("stat") ~= 4 then
+			if SS13.istype(target_mob, "/mob/living/carbon/human") and target_mob:get_var("stat") ~= 4 and target_mob:get_var("key") and dm.global_proc("REF", target_mob) ~= dm.global_proc("REF", player_mob) then
 				if math.random(10) == 1 then
 					player:call_proc("emote", "laugh")
 					player:call_proc("add_mood_event", "bloodlust", dm.global_proc("_text2path", "/datum/mood_event/chemical_laughter"))

@@ -6,7 +6,7 @@ local trustedAdmins = {
 	[admin] = true,
 }
 -- The auth token. You'll need to update this every time you run the script because the python script generates a new one each time it runs for security purposes.
-authToken = "agnTwYCgbVGLvEJBiUgTg"
+authToken = "AOhaxafsveHIrhKeklYQM"
 -- Whether users can submit requests or not.
 local acceptingRequests = true
 -- Whether it's one request per user until their video is played
@@ -33,7 +33,7 @@ local voteSkipData = {
 local AUDIO_DIRECTIONAL = "Directional"
 local AUDIO_MONO = "Mono"
 
-local blockPlayerRequest = {}
+blockPlayerRequest = {}
 local me = dm.global_vars:get_var("GLOB"):get_var("directory"):get(admin)
 local spawnLocation = me:get_var("mob"):get_var("loc")
 -- hehe
@@ -66,7 +66,7 @@ end
 channelCache = {}
 channels = {}
 local currentChannel = nil
-local behindSign = SS13.new("/obj/structure/sign")
+local behindSign = SS13.new("/obj")
 behindSign:set_var("icon_state", "standby")
 behindSign:set_var("vis_flags", 16)
 do
@@ -458,7 +458,7 @@ if authToken ~= "" then
 		if startPos < 0 then
 			startPos = 0
 		end
-		if duration <= 0 then
+		if not duration or duration <= 0 then
 			duration = vidLength
 		end
 		duration = math.min(duration, vidLength)
@@ -513,6 +513,7 @@ if authToken ~= "" then
 			dm.global_proc("message_admins", "TV: "..dm.global_proc("key_name_admin", player).." has been warned about their request due to bad input data.")
 			queryInProgress = false
 			queuedUrls[url] = false
+			blockPlayerRequest[ckey] = nil
 			return
 		end
 
@@ -893,6 +894,7 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				while i <= #channels do
 					if channels[i].channel.url == toSkip then
 						foundOne = true
+						blockPlayerRequest[channels[i].submitter] = nil
 						table.remove(channels, i)
 					else
 						i += 1
@@ -901,6 +903,7 @@ SS13.register_signal(tv, "handle_topic", function(_, user, href_list)
 				i = 1
 				while i <= #queuedRequests do
 					if queuedRequests[i].url == toSkip then
+						blockPlayerRequest[queuedRequests[i].ckey] = nil
 						foundOne = true
 						table.remove(queuedRequests, i)
 					else

@@ -9,19 +9,19 @@ local RAM_POWER_ALL = 5
 -- Change this to your ckey so that this works. Don't run it with my ckey please :)
 local admin = "waltermeldron"
 -- If set to false, ignores the width and height and searches for an industrial_lift on the user's current turf
-local fromScratch = false
+local fromScratch = true
 -- X radius width of the vehicle
 local width = 1
 -- Y radius width of the vehicle
 local height = 1
 -- Tiles per second at which the vehicle can move at
-local speed = 2
+local speed = 5
 -- The level at which this vehicle can ram objects
-local ramPower = RAM_POWER_ALL
+local ramPower = RAM_POWER_OBJECTS
 -- The level at which this vehicle can ram objects when emagged
-local emaggedRamPower = ramPower + 1
+local emaggedRamPower = ramPower
 -- Whether to increase the destructive level of the vehicle
-local veryDestructive = true
+local veryDestructive = false
 local createWindow = true
 
 local function getPassThroughs()
@@ -224,6 +224,42 @@ local function isTurfBlocked(turf, direction, user)
 	return false
 end
 
+local targetArea = SS13.new("/area/shuttle")
+targetArea:set_var("name", "Vehicle")
+
+local lastArea = mainPlatform:get_var("loc"):get_var("loc")
+local targetAreaContents = targetArea:get_var("contents")
+local x
+local y
+local z
+local scraped = false
+SS13.register_signal(mainPlatform, "movable_moved", function(_)
+	local lastPosition
+	if x and y and z then
+		lastPosition = dm.global_proc("_locate", x, y, z)
+	end
+	if lastPosition then
+		dm.global_proc("_list_add", lastArea:get_var("contents"), lastPosition)
+		if scraped then
+			lastPosition:call_proc("ScrapeAway")
+		end
+		lastPosition = nil
+	end
+	local newTurf = mainPlatform:get_var("loc")
+	if SS13.istype(newTurf, "/turf") then
+		x = newTurf:get_var("x")
+		y = newTurf:get_var("y")
+		z = newTurf:get_var("z")
+		lastArea = newTurf:get_var("loc")
+		dm.global_proc("_list_add", targetAreaContents, newTurf)
+		if SS13.istype(newTurf, "/turf/open/space") then
+			newTurf:call_proc("place_on_top", SS13.type("/turf/open/floor/plating"))
+			scraped = true
+		else
+			scraped = false
+		end
+	end
+end)
 SS13.register_signal(vehicleChair, "atom_relaymove", function(_, user, direction)
 	local currentTime = dm.world:get_var("time")
 	if moveCooldown > currentTime then
@@ -294,6 +330,10 @@ SS13.register_signal(vehicleChair, "atom_emag_act", function(_, emagger)
 end)
 
 SS13.register_signal(mainTramMaster, "parent_qdeleting", function()
+	if lastPosition then
+		dm.global_proc("_list_add", lastArea:get_var("contents"), lastPosition)
+		lastPosition = nil
+	end
 	if SS13.is_valid(vehicleChair) then
 		SS13.qdel(vehicleChair)
 	end

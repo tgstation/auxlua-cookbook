@@ -6,7 +6,7 @@ local trustedAdmins = {
 	[admin] = true,
 }
 -- The auth token. You'll need to update this every time you run the script because the python script generates a new one each time it runs for security purposes.
-authToken = "AOhaxafsveHIrhKeklYQM"
+authToken = "YmVFXljwuNlvamzROBVRQ"
 -- Whether users can submit requests or not.
 local acceptingRequests = true
 -- Whether it's one request per user until their video is played

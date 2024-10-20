@@ -2,7 +2,7 @@ local SS13 = require("SS13")
 
 SS13.wait(1)
 
-local ADMIN_MODE = false
+local ADMIN_MODE = true
 local user = SS13.get_runner_client()
 local SHOULD_ASK_GHOSTS = SS13.await(SS13.global_proc, "tgui_alert", user, "Ask ghosts for a maintenance clown?", "Maintenance Clown", { "No", "Yes" }) == "Yes"
 local function notifyPlayer(ply, msg)

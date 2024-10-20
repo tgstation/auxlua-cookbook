@@ -4,7 +4,7 @@ SS13 = require("SS13")
 -- TGMC frost walls: https://cdn.discordapp.com/attachments/1129765480295583786/1137134773077282876/frostwall.dmi frostwall
 -- TGMC reinforced walls: https://cdn.discordapp.com/attachments/1129765480295583786/1137135418157060146/rwall.dmi rwall
 
-local TURF_URL_TO_LOAD = "https://cdn.discordapp.com/attachments/1129765480295583786/1137051226962399282/cave.dmi?ex=6606e479&is=65f46f79&hm=5000dbca5fd3d49b9b79d78739a11dcbdeda8b785018724395994a99f1719c76&"
+local TURF_URL_TO_LOAD = "https://cdn.discordapp.com/attachments/1129765480295583786/1137051226962399282/cave.dmi?ex=663508f9&is=662293f9&hm=de5e089db7aa390a0f1e736361ef9f40954cc379257c813ecec8eeb465dcd2a7&"
 local TURF_TYPE = "/turf/closed/indestructible/riveted"
 local TURF_NAME = "cave wall"
 local TURF_COLOR = nil

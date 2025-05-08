@@ -1,7 +1,7 @@
 local SS13 = require("SS13")
 local HandlerGroup = require("handler_group")
 
-local IS_LOCAL = true
+local IS_LOCAL = false
 local admin = "waltermeldron"
 local LOCAL_CLASS = "Zombie (AI)"
 local ALLOW_ZOMBIE_CONTROLLABLE = false
@@ -433,7 +433,7 @@ end
 local dead_players_by_zlevel = dm.global_vars.SSmobs.dead_players_by_zlevel
 local SSspacial_grid = dm.global_vars.SSspatial_grid
 local makeZombieController = function(location)
-	local controller = SS13.new("/mob/camera", location)
+	local controller = SS13.new("/mob/eye", location)
 	local controllerData = {
 		human = controller
 	}
@@ -447,7 +447,7 @@ local makeZombieController = function(location)
 	controller:set_sight(60)
 	controller.mouse_opacity =  1
 	controller.color =  "#33cc33"
-	controller.icon =  loadIcon("https://raw.githubusercontent.com/tgstation/tgstation/master/icons/mob/silicon/cameramob.dmi")
+	controller.icon =  loadIcon("https://raw.githubusercontent.com/tgstation/tgstation/master/icons/mob/eyemob.dmi")
 	controller.icon_state =  "marker"
 	controller.lighting_cutoff_red =  5
 	controller.lighting_cutoff_green =  35
@@ -1604,7 +1604,7 @@ CLASSES = {
 							target:throw_at(targetTurf, 8, 2)
 						end
 					end)
-					RegisterClassSignal(humanData, item, "item_pre_attack", function(_, target, user)
+					RegisterClassSignal(humanData, item, "item_interacting_with_atom", function(_, user, target, modifiers)
 						if SS13.istype(target, "/turf/closed/wall") then
 							humanData.human:UnarmedAttack(target, 1, {})
 							return 1
